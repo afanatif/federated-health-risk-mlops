@@ -8,33 +8,51 @@ set -e
 IFS=',' read -ra NODE_IDS <<< "$NODES_TO_RUN"
 echo "Nodes to run: ${NODE_IDS[@]}"
 
-# ensure data
+# -----------------------
+# Ensure data
+# -----------------------
 python data/download.py
 
-# start server
+# -----------------------
+# Start server
+# -----------------------
 python server/server_flower.py &
 SERVER_PID=$!
 echo "Started server pid=$SERVER_PID"
-sleep 3
 
+# Wait for server to open port 8080
+echo "Waiting for server to be ready..."
+while ! nc -z localhost 8080; do
+  sleep 1
+done
+echo "Server ready!"
+
+# -----------------------
+# Start clients
+# -----------------------
 PIDS=()
 for id in "${NODE_IDS[@]}"; do
-  cs="clients/node${id}/client_flower.py"
-  if [ ! -f "$cs" ]; then
-    echo "Client script missing: $cs"
+  CLIENT_SCRIPT="clients/node${id}/client_flower.py"
+  if [ ! -f "$CLIENT_SCRIPT" ]; then
+    echo "Client script missing: $CLIENT_SCRIPT"
     kill $SERVER_PID || true
     exit 1
   fi
-  echo "Starting $cs"
-  python "$cs" &
+  echo "Starting $CLIENT_SCRIPT"
+  python "$CLIENT_SCRIPT" &
   PIDS+=($!)
   sleep 1
 done
 
-# wait for clients
+# -----------------------
+# Wait for clients to finish
+# -----------------------
 for p in "${PIDS[@]}"; do
   wait "$p" || true
 done
 
+# -----------------------
+# Stop server
+# -----------------------
 kill $SERVER_PID || true
-echo "Done"
+echo "All nodes finished. Server stopped."
