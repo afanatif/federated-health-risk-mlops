@@ -1,5 +1,6 @@
 # server/server_flower.py
-import flwr as fl
+from flwr.server import start_server, ServerConfig
 
 if __name__ == "__main__":
-    fl.server.start_server(config={"num_rounds": 3})
+    # Start Flower server with correct ServerConfig
+    start_server(config=ServerConfig(num_rounds=3))
