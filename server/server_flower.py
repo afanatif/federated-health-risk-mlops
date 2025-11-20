@@ -1,6 +1,14 @@
 # server/server_flower.py
-from flwr.server import start_server, ServerConfig
+import flwr as fl
+
+from flwr.server.server import ServerConfig
+
+def main():
+    # Start Flower server
+    fl.server.start_server(
+        server_address="localhost:8080",
+        config=ServerConfig(num_rounds=3),
+    )
 
 if __name__ == "__main__":
-    # Start Flower server with correct ServerConfig
-    start_server(config=ServerConfig(num_rounds=3))
+    main()
