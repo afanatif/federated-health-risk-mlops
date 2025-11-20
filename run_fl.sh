@@ -1,4 +1,6 @@
 #!/bin/bash
+export PYTHONPATH=$(pwd)
+
 set -e
 
 # nodes to run. default 1,2,3
