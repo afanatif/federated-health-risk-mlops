@@ -4,77 +4,110 @@ import zipfile
 import gdown
 import shutil
 
-# Drive file IDs you provided
+# Google Drive file IDs (you provided these earlier)
 NODE_LINKS = {
     "node1": "1medndzHlkC8hfRANmeYyejdaqf64l1Wm",
     "node2": "19MPz1BLPDIiPWBBaBykzt1XTB-v0CfOO",
     "node3": "1Dansjc5jn2hNeCMs2iW7Wod80EmQVO5L"
 }
 
-BASE = "data"  # base where node folders will be created
+# where to create folders
+CLIENTS_DIR = "clients"
 
-def download_zip(node_name, file_id, dest_zip):
-    url = f"https://drive.google.com/uc?id={file_id}"
-    print(f"Downloading {node_name} -> {dest_zip}")
-    gdown.download(url, dest_zip, quiet=False)
+def download_and_extract(node_name, file_id):
+    node_data_dir = os.path.join(CLIENTS_DIR, node_name, "data")
+    os.makedirs(node_data_dir, exist_ok=True)
+    zip_path = os.path.join(node_data_dir, f"{node_name}.zip")
 
-def extract_zip(zip_path, extract_to):
-    print(f"Extracting {zip_path} -> {extract_to}")
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(extract_to)
-
-def find_first_csv(folder):
-    for root, _, files in os.walk(folder):
-        for f in files:
-            if f.lower().endswith(".csv"):
-                return os.path.join(root, f)
-    return None
-
-def ensure_node(node_name, file_id):
-    node_dir = os.path.join(BASE, node_name)
-    os.makedirs(node_dir, exist_ok=True)
-    zip_path = os.path.join(node_dir, f"{node_name}.zip")
-
-    # download zip if not present
+    # download zip if missing
     if not os.path.exists(zip_path):
-        download_zip(node_name, file_id, zip_path)
+        url = f"https://drive.google.com/uc?id={file_id}"
+        print(f"Downloading {node_name} from {url} -> {zip_path}")
+        gdown.download(url, zip_path, quiet=False)
     else:
-        print(f"Zip already exists: {zip_path}")
+        print(f"{zip_path} already present")
 
-    # extract into a temp folder under node_dir/extracted/
-    extracted_dir = os.path.join(node_dir, "extracted")
+    # extract
+    extracted_dir = os.path.join(node_data_dir, "extracted")
     if not os.path.exists(extracted_dir) or not os.listdir(extracted_dir):
-        extract_zip(zip_path, extracted_dir)
+        print(f"Extracting {zip_path} -> {extracted_dir}")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extracted_dir)
     else:
-        print(f"Already extracted: {extracted_dir}")
+        print(f"Already extracted to {extracted_dir}")
 
-    # search for CSV inside extracted_dir
-    csv_path = find_first_csv(extracted_dir)
-    if csv_path:
-        target_csv = os.path.join(node_dir, "sample.csv")
-        if not os.path.exists(target_csv):
-            print(f"Found CSV: {csv_path} -> moving to {target_csv}")
-            shutil.move(csv_path, target_csv)
+    # attempt to move images/labels if they are nested inside extracted directory
+    # If zip already has images/ and labels/ at top, keep them; else search.
+    images_target = os.path.join(node_data_dir, "images")
+    labels_target = os.path.join(node_data_dir, "labels")
+
+    # helper to find folder by name recursively
+    def find_folder(root, name):
+        for root_, dirs, _ in os.walk(root):
+            if name in dirs:
+                return os.path.join(root_, name)
+        return None
+
+    # find images folder
+    found_images = find_folder(extracted_dir, "images")
+    found_labels = find_folder(extracted_dir, "labels")
+
+    # if images_target exists and non-empty, keep
+    if os.path.exists(images_target) and os.listdir(images_target):
+        print(f"Images already at {images_target}")
+    else:
+        if found_images:
+            print(f"Moving {found_images} -> {images_target}")
+            if os.path.exists(images_target):
+                shutil.rmtree(images_target)
+            shutil.move(found_images, images_target)
         else:
-            print(f"Target CSV already exists: {target_csv}")
+            # attempt to find any images inside extracted_dir and move them into images/
+            imgs = []
+            for root_, _, files in os.walk(extracted_dir):
+                for f in files:
+                    if f.lower().endswith((".jpg",".jpeg",".png")):
+                        imgs.append(os.path.join(root_, f))
+            if imgs:
+                os.makedirs(images_target, exist_ok=True)
+                for p in imgs:
+                    shutil.move(p, os.path.join(images_target, os.path.basename(p)))
+                print(f"Collected {len(imgs)} images into {images_target}")
+            else:
+                print(f"Warning: no images found inside {extracted_dir}")
+
+    if os.path.exists(labels_target) and os.listdir(labels_target):
+        print(f"Labels already at {labels_target}")
     else:
-        print(f"Warning: No CSV found in {extracted_dir}. Please place a CSV at {os.path.join(node_dir,'sample.csv')} manually.")
+        if found_labels:
+            print(f"Moving {found_labels} -> {labels_target}")
+            if os.path.exists(labels_target):
+                shutil.rmtree(labels_target)
+            shutil.move(found_labels, labels_target)
+        else:
+            # move any *.txt files as labels if present
+            txts = []
+            for root_, _, files in os.walk(extracted_dir):
+                for f in files:
+                    if f.lower().endswith(".txt"):
+                        txts.append(os.path.join(root_, f))
+            if txts:
+                os.makedirs(labels_target, exist_ok=True)
+                for p in txts:
+                    shutil.move(p, os.path.join(labels_target, os.path.basename(p)))
+                print(f"Collected {len(txts)} label txts into {labels_target}")
+            else:
+                print(f"Warning: no label txt files found inside {extracted_dir}")
 
-    # Optionally, warn about images/labels presence
-    images_dir = os.path.join(node_dir, "images")
-    labels_dir = os.path.join(node_dir, "labels")
-    if os.path.exists(images_dir):
-        print(f"Images folder exists: {images_dir}")
-    if os.path.exists(labels_dir):
-        print(f"Labels folder exists: {labels_dir}")
+    # optionally remove extracted dir (keep it for debugging)
+    # shutil.rmtree(extracted_dir)
+    print(f"Node {node_name} ready: images->{images_target}, labels->{labels_target}")
 
-    print(f"Node {node_name} ready at {node_dir}")
-
-def ensure_all():
-    print("=== Preparing nodes ===")
-    for n, fid in NODE_LINKS.items():
-        ensure_node(n, fid)
-    print("=== All done ===")
+def ensure_all_nodes():
+    print("=== Ensure nodes ===")
+    for node, fid in NODE_LINKS.items():
+        download_and_extract(node, fid)
+    print("=== All nodes prepared ===")
 
 if __name__ == "__main__":
-    ensure_all()
+    ensure_all_nodes()
