@@ -1,0 +1,11 @@
+flwr==1.5.0
+torch
+pandas
+scikit-learn
+numpy
+mlflow
+evidently
+fastapi
+uvicorn
+prometheus-client
+pytest
