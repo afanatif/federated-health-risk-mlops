@@ -1,5 +1,6 @@
 # server/model.py
 import torch.nn as nn
+import torch
 
 class RiskModel(nn.Module):
     def __init__(self, input_dim=5):
