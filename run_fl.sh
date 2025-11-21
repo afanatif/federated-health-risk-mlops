@@ -12,7 +12,7 @@ echo "PYTHONPATH = $PYTHONPATH"
 # --------------------------------------------------------
 # 1. RUN SANITY CHECK FIRST
 # --------------------------------------------------------
-if [ ! -f "sanity_check.py" ]; then
+if [ ! -f "scripts/sanity_check.py" ]; then
   echo "❌ sanity_check.py not found!"
   exit 1
 fi
