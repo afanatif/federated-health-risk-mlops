@@ -1,6 +1,7 @@
 """
 Data loader for node3.
 Flexibly handles different calling patterns from client_flower.py
+Fixed: drop_last=True to prevent BatchNorm errors with single-sample batches
 """
 import os
 import torch
@@ -98,8 +99,9 @@ def get_loaders(images_dir=None, labels_dir=None, batch_size=16, val_frac=0.1, s
     print(f"[Node3 DataLoader] Train: {len(train_ds)}, Val: {len(val_ds)}")
     
     # Create loaders
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+    # drop_last=True prevents BatchNorm errors when last batch has size 1
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=False)
     
     print("[Node3 DataLoader] ✓ Loaders created successfully")
     
