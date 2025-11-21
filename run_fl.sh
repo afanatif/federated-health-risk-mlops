@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # run_fl.sh - robust launcher for the federated demo (sanity checks, data prep, server & clients)
 # Usage:
-#   make executable: chmod +x run_fl.sh
-#   run: ./run_fl.sh
-# Optional: export NODES_TO_RUN="1,2,3" to control which nodes start
-
+#   chmod +x run_fl.sh
+#   ./run_fl.sh
 set -euo pipefail
 
-# ---------- Helper functions ----------
+# ---------- helpers ----------
 log()   { printf "\n[ %s ] %s\n" "$(date +'%H:%M:%S')" "$*"; }
 err()   { printf "\n[ %s ] ERROR: %s\n" "$(date +'%H:%M:%S')" "$*" >&2; }
 cleanup() {
   log "Cleaning up processes..."
   # kill clients if any
-  if [ "${CLIENT_PIDS+x}" = "x" ] && [ ${#CLIENT_PIDS[@]} -gt 0 ]; then
+  if [ "${CLIENT_PIDS+x}" = "x" ] && [ ${#CLIENT_PIDS[@]:-0} -gt 0 ]; then
     for p in "${CLIENT_PIDS[@]}"; do
       if kill -0 "$p" 2>/dev/null; then
         log "Killing client pid $p"
@@ -29,62 +27,96 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---------- Step 0: ensure script runs from repo root ----------
-# Move to repo root (script expected in repo root). If run_fl.sh is inside a folder,
-# this will attempt to move to parent folder of script location.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.." 2>/dev/null || true
-REPO_ROOT="$(pwd)"
+# ---------- find repo root ----------
+# prefer git top-level if available
+GIT_TOPLEVEL=""
+if command -v git >/dev/null 2>&1; then
+  GIT_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || true)
+fi
+
+if [ -n "$GIT_TOPLEVEL" ]; then
+  REPO_ROOT="$GIT_TOPLEVEL"
+else
+  # fallback: search upward for a directory that contains server/server_flower.py
+  CWD="$(pwd)"
+  FOUND=""
+  SEARCH_DIR="$CWD"
+  for i in 0 1 2 3 4; do
+    if [ -f "$SEARCH_DIR/server/server_flower.py" ]; then
+      FOUND="$SEARCH_DIR"
+      break
+    fi
+    SEARCH_DIR="$(dirname "$SEARCH_DIR")"
+  done
+  if [ -n "$FOUND" ]; then
+    REPO_ROOT="$FOUND"
+  else
+    # last fallback: search downward (project may be nested)
+    FOUND_DOWN=$(find . -maxdepth 3 -type f -path "*/server/server_flower.py" -print -quit || true)
+    if [ -n "$FOUND_DOWN" ]; then
+      REPO_ROOT="$(cd "$(dirname "$(dirname "$FOUND_DOWN")")" && pwd)"
+    else
+      # as final fallback use current dir
+      REPO_ROOT="$(pwd)"
+    fi
+  fi
+fi
+
+cd "$REPO_ROOT"
 export PYTHONPATH="$REPO_ROOT"
 log "Working directory set to: $REPO_ROOT"
 log "PYTHONPATH = $PYTHONPATH"
 
-# ---------- Step 1: Sanity check ----------
-SANITY_SCRIPT="scripts/sanity_check.py"
+# ---------- locate sanity script ----------
+# prefer scripts/sanity_check.py directly in repo root
+SANITY_SCRIPT="$REPO_ROOT/scripts/sanity_check.py"
 if [ ! -f "$SANITY_SCRIPT" ]; then
-  err "Sanity check script not found at $SANITY_SCRIPT"
-  err "Make sure scripts/sanity_check.py exists (you previously created scripts/sanity_check.py)."
+  # try to find any sanity_check.py within 3 levels
+  SANITY_SCRIPT=$(find "$REPO_ROOT" -maxdepth 3 -type f -name "sanity_check.py" -print -quit || true)
+fi
+
+if [ -z "$SANITY_SCRIPT" ] || [ ! -f "$SANITY_SCRIPT" ]; then
+  err "Sanity check script not found. Searched for scripts/sanity_check.py and fallback locations."
+  err "Please ensure scripts/sanity_check.py exists in the repo (path reported: $SANITY_SCRIPT)"
   exit 1
 fi
-log "Running sanity check: $SANITY_SCRIPT"
+
+log "Running sanity check at: $SANITY_SCRIPT"
 if python "$SANITY_SCRIPT"; then
-  log "Sanity check passed."
+  log "Sanity check PASSED."
 else
   err "Sanity check FAILED. Fix reported issues before running."
   exit 1
 fi
 
-# ---------- Step 2: Basic file/directory checks ----------
-# Required paths (tweak if your layout differs)
-REQUIRED_DIRS=( "server" "clients" "data" "clients/node1" "clients/node2" "clients/node3" )
+# ---------- verify baseline files & folders ----------
+REQUIRED_DIRS=( "server" "clients" "data" )
 for d in "${REQUIRED_DIRS[@]}"; do
-  if [ ! -d "$d" ]; then
-    err "Required directory missing: $d"
+  if [ ! -d "$REPO_ROOT/$d" ]; then
+    err "Required directory missing: $REPO_ROOT/$d"
     exit 1
   fi
 done
-REQUIRED_FILES=( "server/server_flower.py" "data/download.py" )
-for f in "${REQUIRED_FILES[@]}"; do
-  if [ ! -f "$f" ]; then
-    err "Required file missing: $f"
-    exit 1
-  fi
-done
-# model file can exist as models/model.py or model.py; accept both
-if [ -f "models/model.py" ]; then
-  MODEL_PATH="models/model.py"
-elif [ -f "model.py" ]; then
-  MODEL_PATH="model.py"
+
+if [ ! -f "$REPO_ROOT/data/download.py" ]; then
+  err "Required file missing: data/download.py"
+  exit 1
+fi
+
+# accept model located at models/model.py or model.py
+if [ -f "$REPO_ROOT/models/model.py" ]; then
+  MODEL_PATH="$REPO_ROOT/models/model.py"
+elif [ -f "$REPO_ROOT/model.py" ]; then
+  MODEL_PATH="$REPO_ROOT/model.py"
 else
   err "Model file not found at models/model.py or model.py"
   exit 1
 fi
 log "Model file located: $MODEL_PATH"
 
-# ---------- Step 3: Prepare / download data (skip if already present) ----------
-# We consider data present if clients/node1/data/images exists and is non-empty
+# ---------- data download (skip if present) ----------
 DATA_PRESENT=false
-if [ -d "clients/node1/data/images" ] && [ "$(ls -A clients/node1/data/images 2>/dev/null | wc -l)" -gt 0 ]; then
+if [ -d "$REPO_ROOT/clients/node1/data/images" ] && [ "$(ls -A "$REPO_ROOT/clients/node1/data/images" 2>/dev/null | wc -l)" -gt 0 ]; then
   DATA_PRESENT=true
 fi
 
@@ -92,17 +124,17 @@ if [ "$DATA_PRESENT" = true ]; then
   log "Data appears already present; skipping data download."
 else
   log "Data not present. Running data/download.py to fetch and extract node archives..."
-  python data/download.py
+  python "$REPO_ROOT/data/download.py"
   log "Data download/extract completed."
 fi
 
-# ---------- Step 4: Start server ----------
+# ---------- start server ----------
 log "Starting Flower server (server/server_flower.py)..."
-python server/server_flower.py &
+python "$REPO_ROOT/server/server_flower.py" &
 SERVER_PID=$!
 log "Server started with PID $SERVER_PID"
 
-# ---------- Step 5: Wait for server port (8080) to be listening ----------
+# ---------- wait for server port ----------
 SERVER_ADDR="127.0.0.1"
 SERVER_PORT=8080
 MAX_WAIT_SEC=30
@@ -133,7 +165,6 @@ if command -v nc >/dev/null 2>&1; then
   while ! check_port_with_nc; do
     sleep "$SLEEP_INTERVAL"
     elapsed=$(awk "BEGIN {print $elapsed+$SLEEP_INTERVAL}")
-    # verify server still alive
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
       err "Server process $SERVER_PID died. Check server/server_flower.py logs. Exiting."
       exit 1
@@ -144,7 +175,6 @@ if command -v nc >/dev/null 2>&1; then
     fi
   done
 else
-  # fallback to Python-based check
   while ! check_port_with_python; do
     sleep "$SLEEP_INTERVAL"
     elapsed=$(awk "BEGIN {print $elapsed+$SLEEP_INTERVAL}")
@@ -160,14 +190,14 @@ else
 fi
 log "Server is listening on ${SERVER_ADDR}:${SERVER_PORT}"
 
-# ---------- Step 6: Start clients ----------
+# ---------- start clients ----------
 : "${NODES_TO_RUN:=1,2,3}"
 IFS=',' read -ra NODE_IDS <<< "$NODES_TO_RUN"
 log "Nodes configured to run: ${NODE_IDS[*]}"
 
 CLIENT_PIDS=()
 for id in "${NODE_IDS[@]}"; do
-  CLIENT_SCRIPT="clients/node${id}/client_flower.py"
+  CLIENT_SCRIPT="$REPO_ROOT/clients/node${id}/client_flower.py"
   if [ ! -f "$CLIENT_SCRIPT" ]; then
     err "Client script missing: $CLIENT_SCRIPT"
     log "Shutting down server ($SERVER_PID) and exiting."
@@ -179,11 +209,10 @@ for id in "${NODE_IDS[@]}"; do
   pid=$!
   CLIENT_PIDS+=("$pid")
   log "Client node$id started with pid $pid"
-  # small stagger
   sleep 0.5
 done
 
-# ---------- Step 7: Monitor clients and server ----------
+# ---------- wait for clients ----------
 log "Waiting for clients (PIDs: ${CLIENT_PIDS[*]}) to finish. Server PID: $SERVER_PID"
 for p in "${CLIENT_PIDS[@]}"; do
   if kill -0 "$p" 2>/dev/null; then
@@ -194,17 +223,14 @@ for p in "${CLIENT_PIDS[@]}"; do
   fi
 done
 
-# If server still running, stop it gracefully
+# ---------- shutdown server ----------
 if kill -0 "$SERVER_PID" 2>/dev/null; then
   log "All clients finished. Terminating server pid $SERVER_PID"
   kill "$SERVER_PID" || true
-  # give it a moment
   sleep 1
 else
   log "Server process already exited."
 fi
 
 log "Federated run completed successfully."
-
-# explicit success exit (trap cleanup will run)
 exit 0
