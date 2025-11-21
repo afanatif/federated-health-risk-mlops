@@ -1,119 +1,64 @@
 #!/bin/bash
 set -e
 
-echo ""
-echo "========================================================"
-echo "     Federated Learning Launcher (with sanity checks)"
-echo "========================================================"
-echo ""
-
-# Fix PYTHONPATH to root of repo
+cd "$(dirname "$0")/.." || true
 export PYTHONPATH=$(pwd)
 echo "PYTHONPATH set to $PYTHONPATH"
-echo ""
 
-###############################################################################
-# 1. SANITY CHECKS
-###############################################################################
-echo "Running Sanity Checks..."
-echo "--------------------------------------------------------"
-
-# Helper function
-check_file() {
-  if [ -f "$1" ]; then
-    echo "[ OK ] File exists: $1"
-  else
-    echo "[ERROR] Missing file: $1"
-    exit 1
-  fi
-}
-
-check_dir() {
-  if [ -d "$1" ]; then
-    echo "[ OK ] Directory exists: $1"
-  else
-    echo "[ERROR] Missing directory: $1"
-    exit 1
-  fi
-}
-
-# Required directories
-check_dir "server"
-check_dir "clients"
-check_dir "clients/node1"
-check_dir "clients/node2"
-check_dir "clients/node3"
-check_dir "data"
-check_dir "models"
-
-# Required files
-check_file "data/download.py"
-check_file "server/server_flower.py"
-check_file "models/model.py"
-
-check_file "clients/node1/client_flower.py"
-check_file "clients/node2/client_flower.py"
-check_file "clients/node3/client_flower.py"
-
-echo "--------------------------------------------------------"
-echo "Sanity checks passed!"
-echo ""
-
-###############################################################################
-# 2. DATA DOWNLOAD / PREP
-###############################################################################
-echo "Downloading / verifying dataset..."
-python data/download.py
-echo "Dataset OK."
-echo ""
-
-###############################################################################
-# 3. START SERVER
-###############################################################################
-echo "Starting Flower Server..."
-python server/server_flower.py &
-SERVER_PID=$!
-sleep 3
-echo "Server started with PID $SERVER_PID"
-echo ""
-
-###############################################################################
-# 4. START CLIENTS
-###############################################################################
 : "${NODES_TO_RUN:=1,2,3}"
 IFS=',' read -ra NODE_IDS <<< "$NODES_TO_RUN"
-echo "Nodes to run: ${NODE_IDS[@]}"
 
+# sanity: ensure data downloader exists
+if [ ! -f data/download.py ]; then
+  echo "Missing data/download.py"
+  exit 1
+fi
+
+# download datasets
+python data/download.py
+
+# start server
+python server/server_flower.py &
+SERVER_PID=$!
+echo "Server started with pid $SERVER_PID"
+
+# wait for port 8080 to be open, fail if server dies first
+MAX_WAIT=20
+COUNT=0
+while ! nc -z localhost 8080; do
+  sleep 0.5
+  COUNT=$((COUNT + 1))
+  if ! kill -0 $SERVER_PID 2>/dev/null; then
+    echo "Server process died. Check server logs. Exiting."
+    wait $SERVER_PID || true
+    exit 1
+  fi
+  if [ $COUNT -gt $MAX_WAIT ]; then
+    echo "Timeout waiting for server port 8080. Server may not be ready. Exiting."
+    kill $SERVER_PID || true
+    exit 1
+  fi
+done
+echo "Server is listening on 8080."
+
+# start clients
 PIDS=()
-
-echo ""
-echo "Starting all client nodes..."
-echo "--------------------------------------------------------"
 for id in "${NODE_IDS[@]}"; do
-  CS="clients/node${id}/client_flower.py"
-  echo "Launching: $CS"
-  python "$CS" &
+  cs="clients/node${id}/client_flower.py"
+  if [ ! -f "$cs" ]; then
+    echo "Missing client script: $cs"
+    kill $SERVER_PID || true
+    exit 1
+  fi
+  echo "Starting $cs"
+  python "$cs" &
   PIDS+=($!)
-  sleep 1
+  sleep 0.5
 done
 
-###############################################################################
-# 5. WAIT FOR CLIENTS
-###############################################################################
-echo ""
-echo "Waiting for all clients to finish..."
 for p in "${PIDS[@]}"; do
   wait "$p" || true
 done
 
-###############################################################################
-# 6. SHUTDOWN SERVER
-###############################################################################
-echo "Shutting down server..."
 kill $SERVER_PID || true
-
-echo ""
-echo "========================================================"
-echo " Federated Learning Session Finished Successfully"
-echo "========================================================"
-echo ""
+echo "Done"
