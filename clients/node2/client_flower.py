@@ -3,15 +3,9 @@ import os
 import flwr as fl
 import torch
 import torch.nn as nn
-from model import get_model, model_to_ndarrays, ndarrays_to_model
+from models.model import get_model, model_to_ndarrays, ndarrays_to_model
 
-try:
-    from clients.node2.data_loader import get_loaders
-except Exception:
-    try:
-        from data_loader import get_loaders
-    except Exception as e:
-        raise ImportError("Could not import get_loaders for node2") from e
+from clients.node2.data_loader import get_loaders
 
 NODE_ID = 2
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,23 +14,25 @@ def load_data():
     node_dir = os.path.join("clients", f"node{NODE_ID}", "data")
     images_dir = os.path.join(node_dir, "images")
     labels_dir = os.path.join(node_dir, "labels")
-    try:
-        return get_loaders(node_dir)
-    except Exception:
-        pass
-    try:
-        csv_path = os.path.join(node_dir, "sample.csv")
-        return get_loaders(csv_path)
-    except Exception:
-        pass
-    try:
-        return get_loaders(images_dir=images_dir, labels_dir=labels_dir, batch_size=16)
-    except Exception as e:
-        raise RuntimeError(f"get_loaders failed for node{NODE_ID}: {e}")
+    for attempt in (
+        lambda: get_loaders(node_dir),
+        lambda: get_loaders(os.path.join(node_dir, "sample.csv")),
+        lambda: get_loaders(images_dir=images_dir, labels_dir=labels_dir, batch_size=16),
+        lambda: get_loaders(images_dir, labels_dir),
+    ):
+        try:
+            loaders = attempt()
+            return loaders
+        except TypeError:
+            continue
+        except Exception:
+            continue
+    raise RuntimeError(f"get_loaders failed for node{NODE_ID}")
 
 train_loader, val_loader = load_data()
 model = get_model(pretrained=False)
 model.to(DEVICE)
+
 criterion = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -55,7 +51,7 @@ class FLClient(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         self.model.train()
-        for epoch in range(1):
+        for _ in range(1):
             for X, y in self.train_loader:
                 X = X.to(DEVICE)
                 y = y.to(DEVICE).float()
