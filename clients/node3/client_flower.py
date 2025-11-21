@@ -1,36 +1,55 @@
-# clients/node3/client_flower.py
+# clients/nodeX/client_flower.py  (replace X with node number)
 import os
 import flwr as fl
 import torch
 import torch.nn as nn
+
+# Import model utilities from models/model.py
 from models.model import get_model, model_to_ndarrays, ndarrays_to_model
 
-from clients.node3.data_loader import get_loaders
+# Import node-specific loader; fallback if path differs
+NODE_ID = 3  # <-- set to 1,2,3 in each file
+try:
+    loader_mod = __import__(f"clients.node{NODE_ID}.data_loader", fromlist=["get_loaders"])
+    get_loaders = getattr(loader_mod, "get_loaders")
+except Exception:
+    # try local file data_loader.py
+    try:
+        from data_loader import get_loaders  # fallback
+    except Exception as e:
+        raise RuntimeError(f"Could not import get_loaders for node{NODE_ID}: {e}")
 
-NODE_ID = 3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_data():
     node_dir = os.path.join("clients", f"node{NODE_ID}", "data")
     images_dir = os.path.join(node_dir, "images")
     labels_dir = os.path.join(node_dir, "labels")
-    for attempt in (
+    # try common signatures
+    attempts = [
         lambda: get_loaders(node_dir),
         lambda: get_loaders(os.path.join(node_dir, "sample.csv")),
         lambda: get_loaders(images_dir=images_dir, labels_dir=labels_dir, batch_size=16),
         lambda: get_loaders(images_dir, labels_dir),
-    ):
+    ]
+    for attempt in attempts:
         try:
             loaders = attempt()
             return loaders
         except TypeError:
             continue
+        except FileNotFoundError as e:
+            # bubble up file-not-found so user can fix missing images/labels
+            raise
         except Exception:
             continue
     raise RuntimeError(f"get_loaders failed for node{NODE_ID}")
 
+# load train/val loaders
 train_loader, val_loader = load_data()
-model = get_model(pretrained=False)
+
+# instantiate model and optimizer
+model = get_model(pretrained=False)  # CI: avoid external weight downloads
 model.to(DEVICE)
 
 criterion = nn.BCELoss()
@@ -42,13 +61,15 @@ class FLClient(fl.client.NumPyClient):
         self.train_loader = train_loader
         self.val_loader = val_loader
 
-    def get_parameters(self):
+    # Accept optional config arg (Flower may pass config keyword)
+    def get_parameters(self, config=None):
         return model_to_ndarrays(self.model)
 
-    def set_parameters(self, parameters):
+    def set_parameters(self, parameters, config=None):
         ndarrays_to_model(self.model, parameters)
 
-    def fit(self, parameters, config):
+    # Fit may be called with config; accept it
+    def fit(self, parameters, config=None):
         self.set_parameters(parameters)
         self.model.train()
         for _ in range(1):
@@ -56,13 +77,16 @@ class FLClient(fl.client.NumPyClient):
                 X = X.to(DEVICE)
                 y = y.to(DEVICE).float()
                 preds = self.model(X).squeeze()
+                if preds.dim() == 0:
+                    preds = preds.unsqueeze(0)
                 loss = criterion(preds, y)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
         return self.get_parameters(), len(self.train_loader.dataset), {}
 
-    def evaluate(self, parameters, config):
+    # Evaluate may be called with config; accept it
+    def evaluate(self, parameters, config=None):
         self.set_parameters(parameters)
         self.model.eval()
         total_loss = 0.0
