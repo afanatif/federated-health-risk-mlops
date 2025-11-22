@@ -2,18 +2,28 @@
 # FEDERATED LEARNING WITH YOLOV8
 # Requirements for Object Detection
 # ============================================
+# INSTALL ORDER MATTERS!
+# Install these in order with: pip install -r requirements.txt
+# Then run: pip install --force-reinstall "numpy<2.0.0"
+# ============================================
 
 # Core Deep Learning
 torch==2.0.0
 torchvision==0.15.0
-numpy==1.24.3
 
 # YOLOv8 (Ultralytics)
 ultralytics==8.0.196
 
-# Federated Learning
+# CRITICAL: NumPy must be <2.0 (install LAST)
+# Run separately: pip install --force-reinstall "numpy<2.0.0"
+numpy==1.24.3
+
+# Federated Learning (install with --no-deps)
 flwr==1.5.0
 flwr-datasets==0.0.2
+grpcio>=1.48.0
+protobuf>=3.19.0
+cryptography>=38.0.0
 
 # Image Processing
 Pillow==10.0.0
