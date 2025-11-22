@@ -40,13 +40,14 @@ jobs:
           python -m pip install --upgrade pip
           pip --version
 
-      - name: Install PyTorch (CPU version for CI)
+      - name: Install PyTorch (CPU version for CI) - FIRST before requirements.txt
         run: |
           pip install torch==2.0.0 torchvision==0.15.0 --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Install dependencies from requirements.txt
+      - name: Install remaining dependencies from requirements.txt
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements.txt --no-deps
+          pip install numpy==1.24.3 ultralytics==8.0.196 pillow==10.0.0 pyyaml==6.0 opencv-python-headless==4.8.0.76 tqdm==4.66.1 pycryptodome==3.18.0 flwr==1.5.0
 
       - name: Verify NumPy version (must be 1.x)
         run: |
@@ -102,7 +103,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install torch==2.0.0 torchvision==0.15.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt --no-deps
+          pip install numpy==1.24.3 ultralytics==8.0.196 pillow==10.0.0 pyyaml==6.0 opencv-python-headless==4.8.0.76 tqdm==4.66.1 pycryptodome==3.18.0 flwr==1.5.0
 
       - name: Download data
         run: |
