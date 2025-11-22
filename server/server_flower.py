@@ -1,4 +1,3 @@
-# server/server_flower.py
 """
 Flower server for YOLOv8 federated training using Weighted FedAvg.
 
@@ -43,6 +42,7 @@ class SaveCheckpointFedAvg(fl.server.strategy.FedAvg):
         super().__init__(*args, **kwargs)
         self.checkpoint_dir = checkpoint_dir
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+        # Note: fraction_fit, min_fit_clients, etc. are handled by *args, **kwargs
 
     def aggregate_fit(self, rnd, results, failures):
         """
@@ -65,9 +65,18 @@ class SaveCheckpointFedAvg(fl.server.strategy.FedAvg):
 
             model = get_model(model_size="n", num_classes=1, pretrained=False)
             ndarrays_to_model(model, ndarrays)
+            
+            # Save the round-specific checkpoint
             ckpt_path = os.path.join(self.checkpoint_dir, f"global_round_{rnd}.pt")
             save_model(model, ckpt_path)
             logging.info("Saved global checkpoint: %s", ckpt_path)
+
+            # CRITICAL: Also save the final round model to a fixed name for artifact upload
+            if rnd == self.config.num_rounds:
+                final_path = os.path.join(os.getcwd(), "global_final_model.pt")
+                save_model(model, final_path)
+                logging.info("Saved final model to: %s for artifact upload.", final_path)
+
         except Exception as e:
             logging.exception("Failed to save checkpoint after aggregation: %s", e)
 
@@ -81,6 +90,11 @@ def main():
     parser.add_argument("--addr", type=str, default="0.0.0.0:8080", help="Server bind address")
     parser.add_argument("--rounds", type=int, default=5, help="Number of federated rounds")
     parser.add_argument("--min-clients", type=int, default=3, help="Minimum available clients")
+    
+    # ⭐ ADDED ARGUMENT: The fraction of clients required to participate in a round.
+    # Set to a float value (e.g., 0.34 for 1/3 clients in CI/CD).
+    parser.add_argument("--fraction-fit", type=float, default=1.0, help="Fraction of available clients required for fitting.")
+    
     parser.add_argument("--log-level", type=str, default="INFO")
     args = parser.parse_args()
 
@@ -88,7 +102,8 @@ def main():
                         format="%(asctime)s %(levelname)s %(message)s")
     logging.info("=" * 60)
     logging.info("Starting Flower Federated Learning Server (Weighted FedAvg)")
-    logging.info("Address: %s | Rounds: %d | Min clients: %d", args.addr, args.rounds, args.min_clients)
+    logging.info("Address: %s | Rounds: %d | Min clients: %d | Fraction Fit: %.2f", 
+                 args.addr, args.rounds, args.min_clients, args.fraction_fit)
     logging.info("=" * 60)
 
     # Try to create initial parameters from your model (optional)
@@ -107,8 +122,11 @@ def main():
     # Prepare strategy
     strategy = SaveCheckpointFedAvg(
         checkpoint_dir="server/checkpoints",
-        fraction_fit=1.0,
-        fraction_evaluate=1.0,
+        
+        # ⭐ CRITICAL CHANGE: Use the parsed argument for fraction_fit
+        fraction_fit=args.fraction_fit,
+        
+        fraction_evaluate=1.0, # Keep this high or match fraction_fit
         min_fit_clients=args.min_clients,
         min_evaluate_clients=args.min_clients,
         min_available_clients=args.min_clients,
