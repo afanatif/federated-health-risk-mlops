@@ -1,65 +1,129 @@
-import flwr as fl
-from typing import List, Tuple, Dict, Optional
-from flwr.common import Metrics
+# server/server_flower.py
+"""
+Flower server for YOLOv8 federated training using Weighted FedAvg.
 
+- Expects your repo to provide:
+    models.model.get_model
+    models.model.model_to_ndarrays
+    models.model.ndarrays_to_model
+    models.model.save_model
+
+- Saves global model after each round to server/checkpoints/global_round_{round}.pt
+"""
+
+import os
+import argparse
+import logging
+from typing import List, Tuple, Dict, Optional
+
+import flwr as fl
+from flwr.common import Metrics, ndarrays_to_parameters, parameters_to_ndarrays
+
+# ----------------------------
+# Weighted metrics aggregator
+# ----------------------------
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
-    """
-    Aggregate metrics from multiple clients using weighted average.
-    
-    Args:
-        metrics: List of (num_examples, metrics_dict) tuples from each client
-    
-    Returns:
-        Aggregated metrics dictionary
-    """
-    # Calculate total number of examples
     total_examples = sum(num_examples for num_examples, _ in metrics)
-    
     if total_examples == 0:
         return {}
-    
-    # Initialize aggregated metrics
-    aggregated = {}
-    
-    # Get all metric keys from first client
-    if metrics:
-        metric_keys = metrics[0][1].keys()
-        
-        # Aggregate each metric
-        for key in metric_keys:
-            weighted_sum = sum(
-                num_examples * m[key] 
-                for num_examples, m in metrics 
-                if key in m
-            )
-            aggregated[key] = weighted_sum / total_examples
-    
+
+    aggregated: Metrics = {}
+    # union of keys across clients
+    metric_keys = set().union(*(m.keys() for _, m in metrics))
+    for key in metric_keys:
+        weighted_sum = sum(num_examples * m.get(key, 0.0) for num_examples, m in metrics)
+        aggregated[key] = weighted_sum / total_examples
     return aggregated
+
+# ----------------------------
+# Custom FedAvg that saves global model each round
+# ----------------------------
+class SaveCheckpointFedAvg(fl.server.strategy.FedAvg):
+    def __init__(self, checkpoint_dir: str = "server/checkpoints", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.checkpoint_dir = checkpoint_dir
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+    def aggregate_fit(self, rnd, results, failures):
+        """
+        Called after clients returned fit results. We call parent aggregator to perform FedAvg,
+        then save the aggregated parameters to disk as a model checkpoint.
+        """
+        agg_result = super().aggregate_fit(rnd, results, failures)
+        # agg_result is Optional[Tuple[Parameters, Metrics]]
+        if agg_result is None:
+            logging.warning("aggregate_fit returned None (no aggregation performed).")
+            return None
+
+        parameters, metrics = agg_result
+
+        try:
+            # Convert Parameters -> ndarrays
+            ndarrays = parameters_to_ndarrays(parameters)
+            # Reconstruct a model and load ndarrays, then save checkpoint
+            from models.model import get_model, ndarrays_to_model, save_model
+
+            model = get_model(model_size="n", num_classes=1, pretrained=False)
+            ndarrays_to_model(model, ndarrays)
+            ckpt_path = os.path.join(self.checkpoint_dir, f"global_round_{rnd}.pt")
+            save_model(model, ckpt_path)
+            logging.info("Saved global checkpoint: %s", ckpt_path)
+        except Exception as e:
+            logging.exception("Failed to save checkpoint after aggregation: %s", e)
+
+        return parameters, metrics
+
+# ----------------------------
+# Main server start
+# ----------------------------
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--addr", type=str, default="0.0.0.0:8080", help="Server bind address")
+    parser.add_argument("--rounds", type=int, default=5, help="Number of federated rounds")
+    parser.add_argument("--min-clients", type=int, default=3, help="Minimum available clients")
+    parser.add_argument("--log-level", type=str, default="INFO")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO),
+                        format="%(asctime)s %(levelname)s %(message)s")
+    logging.info("=" * 60)
+    logging.info("Starting Flower Federated Learning Server (Weighted FedAvg)")
+    logging.info("Address: %s | Rounds: %d | Min clients: %d", args.addr, args.rounds, args.min_clients)
+    logging.info("=" * 60)
+
+    # Try to create initial parameters from your model (optional)
+    initial_parameters = None
+    try:
+        from models.model import get_model, model_to_ndarrays
+        logging.info("Building initial model parameters from models.model.get_model")
+        model = get_model(model_size="n", num_classes=1, pretrained=False)
+        ndarrays = model_to_ndarrays(model)
+        initial_parameters = ndarrays_to_parameters(ndarrays)
+        logging.info("Initial parameters created (length=%d ndarrays).", len(ndarrays))
+    except Exception as e:
+        logging.warning("Could not build initial parameters from models.model: %s", e)
+        logging.info("Server will rely on client-initialized parameters if needed.")
+
+    # Prepare strategy
+    strategy = SaveCheckpointFedAvg(
+        checkpoint_dir="server/checkpoints",
+        fraction_fit=1.0,
+        fraction_evaluate=1.0,
+        min_fit_clients=args.min_clients,
+        min_evaluate_clients=args.min_clients,
+        min_available_clients=args.min_clients,
+        initial_parameters=initial_parameters,
+        fit_metrics_aggregation_fn=weighted_average,
+        evaluate_metrics_aggregation_fn=weighted_average,
+    )
+
+    # Start server (blocking)
+    fl.server.start_server(
+        server_address=args.addr,
+        config=fl.server.ServerConfig(num_rounds=args.rounds),
+        strategy=strategy,
+    )
 
 
 if __name__ == "__main__":
-    # Use FedAvg strategy with metrics aggregation
-    strategy = fl.server.strategy.FedAvg(
-        fraction_fit=1.0,                    # Use all available clients for training
-        fraction_evaluate=1.0,               # Use all available clients for evaluation
-        min_fit_clients=3,                   # Minimum clients for training
-        min_evaluate_clients=3,              # Minimum clients for evaluation
-        min_available_clients=3,             # Minimum clients that must connect
-        fit_metrics_aggregation_fn=weighted_average,      # Aggregate training metrics
-        evaluate_metrics_aggregation_fn=weighted_average, # Aggregate evaluation metrics
-    )
-    
-    print("=" * 60)
-    print("Starting Flower Federated Learning Server")
-    print("=" * 60)
-    print(f"Strategy: FedAvg")
-    print(f"Rounds: 3")
-    print(f"Min clients: 3")
-    print(f"Metrics tracking: ENABLED (accuracy will be displayed)")
-    print("=" * 60)
-    
-    fl.server.start_server(
-        server_address="localhost:8080",
-        config=fl.server.ServerConfig(num_rounds=3),
-        strategy=strategy
-    )
+    main()
