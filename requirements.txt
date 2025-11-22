@@ -9,8 +9,10 @@
 numpy==1.24.3
 
 # Core Deep Learning
-torch==2.0.0
-torchvision==0.15.0
+# Note: CPU versions installed via workflow with specific index URL
+# These versions work together
+torch>=2.0.0
+torchvision>=0.15.0
 
 # YOLOv8 Object Detection
 ultralytics==8.0.196
