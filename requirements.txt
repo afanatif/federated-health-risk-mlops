@@ -3,44 +3,27 @@
 # Requirements for Object Detection
 # ============================================
 # INSTALL ORDER MATTERS!
-# Install these in order with: pip install -r requirements.txt
-# Then run: pip install --force-reinstall "numpy<2.0.0"
-# ============================================
+# Install with: pip install -r requirements.txt
+
+# NumPy (1.x ONLY - 2.x breaks Flower)
+numpy==1.24.3
 
 # Core Deep Learning
 torch==2.0.0
 torchvision==0.15.0
 
-# YOLOv8 (Ultralytics)
+# YOLOv8 Object Detection
 ultralytics==8.0.196
 
-# CRITICAL: NumPy must be <2.0 (install LAST)
-# Run separately: pip install --force-reinstall "numpy<2.0.0"
-numpy==1.24.3
-
-# Federated Learning (install with --no-deps)
-flwr==1.5.0
-flwr-datasets==0.0.2
-grpcio>=1.48.0
-protobuf>=3.19.0
-cryptography>=38.0.0
-
-# Image Processing
-Pillow==10.0.0
-opencv-python==4.8.0.76
-
-# Utilities
-pyyaml==6.0.1
+# Image & Data Processing
+pillow==10.0.0
+pyyaml==6.0
+opencv-python-headless==4.8.0.76
 tqdm==4.66.1
-matplotlib==3.7.2
-seaborn==0.12.2
 
-# Data Handling
-pandas==2.0.3
+# CRITICAL: Crypto for Flower secure aggregation
+# This was the missing dependency causing: ModuleNotFoundError: No module named 'Crypto'
+pycryptodome==3.18.0
 
-# Testing
-pytest==7.4.0
-pytest-cov==4.1.0
-
-# Optional: For visualization
-tensorboard==2.13.0
+# Federated Learning
+flwr==1.5.0
