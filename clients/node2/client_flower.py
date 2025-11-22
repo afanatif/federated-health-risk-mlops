@@ -21,7 +21,7 @@ sys.path.insert(0, os.getcwd())
 from models.model import get_model, model_to_ndarrays, ndarrays_to_model
 
 # Import node-specific loader
-NODE_ID = 1  # <-- Change to 2, 3 for other nodes
+NODE_ID = 2  # <-- Change to 2, 3 for other nodes
 
 try:
     loader_mod = __import__(f"clients.node{NODE_ID}.data_loader", fromlist=["get_loaders"])
