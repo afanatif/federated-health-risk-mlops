@@ -44,29 +44,45 @@ jobs:
         run: |
           pip install torch==2.0.0 torchvision==0.15.0 --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Install YOLOv8 and other packages
+      - name: Install dependencies from requirements.txt
         run: |
-          pip install ultralytics==8.0.196
-          pip install pillow pyyaml opencv-python-headless tqdm
+          pip install -r requirements.txt
 
-      - name: Force NumPy 1.x AFTER all installs (CRITICAL FIX)
+      - name: Verify NumPy version (must be 1.x)
         run: |
-          pip install --force-reinstall "numpy<2.0.0"
-          python -c "import numpy; print(f'✅ NumPy {numpy.__version__} (downgraded)')"
+          python -c "import numpy; version = numpy.__version__; print(f'✅ NumPy {version}'); assert version.startswith('1.'), f'ERROR: NumPy must be 1.x, got {version}'"
 
-      - name: Install Flower with NumPy 1.x
+      - name: Verify PyTorch
         run: |
-          pip install flwr==1.5.0 --no-deps
-          pip install grpcio protobuf cryptography
-
-      - name: Verify installations
-        run: |
-          python -c "import numpy; print(f'✅ NumPy {numpy.__version__}')"
           python -c "import torch; print(f'✅ PyTorch {torch.__version__}')"
+
+      - name: Verify TorchVision
+        run: |
           python -c "import torchvision; print(f'✅ TorchVision {torchvision.__version__}')"
+
+      - name: Verify YOLOv8
+        run: |
           python -c "from ultralytics import YOLO; print('✅ YOLOv8 installed')"
+
+      - name: Verify Flower
+        run: |
           python -c "import flwr; print(f'✅ Flower {flwr.__version__}')"
+
+      - name: Verify pycryptodome (Secure Aggregation)
+        run: |
+          python -c "from Crypto.Protocol.SecretSharing import Shamir; print('✅ pycryptodome installed - Secure aggregation available')"
+
+      - name: Verify Pillow
+        run: |
           python -c "from PIL import Image; print('✅ Pillow installed')"
+
+      - name: Print all installed package versions
+        run: |
+          echo "=========================================="
+          echo "INSTALLED PACKAGES:"
+          echo "=========================================="
+          pip list | grep -E "torch|ultralytics|flwr|numpy|Pillow|opencv|pycryptodome|pyyaml|tqdm"
+          echo "=========================================="
 
   # ========================================
   # JOB 2: DATA VALIDATION
@@ -86,9 +102,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install pillow
-          pip install --force-reinstall "numpy<2.0.0"
+          pip install -r requirements.txt
 
       - name: Download data
         run: |
@@ -142,9 +156,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install pillow
-          pip install --force-reinstall "numpy<2.0.0"
+          pip install -r requirements.txt
 
       - name: Download data
         run: |
@@ -201,9 +213,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install pillow
-          pip install --force-reinstall "numpy<2.0.0"
+          pip install -r requirements.txt
 
       - name: Download data
         run: |
@@ -246,7 +256,7 @@ jobs:
               
               train_loader, val_loader = get_loaders(batch_size=4, img_size=640)
               print(f'✅ Node 2: {len(train_loader)} train batches, {len(val_loader)} val batches')
-          else:
+          else
               print('⚠️  Node 2 data not found - skipping test')
           "
         continue-on-error: true
@@ -287,10 +297,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install ultralytics==8.0.196
-          pip install pillow pyyaml
-          pip install --force-reinstall "numpy<2.0.0"
+          pip install -r requirements.txt
 
       - name: Test model import
         run: |
@@ -366,12 +373,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install ultralytics==8.0.196
-          pip install pillow pyyaml
-          pip install --force-reinstall "numpy<2.0.0"
-          pip install flwr==1.5.0 --no-deps
-          pip install grpcio protobuf cryptography
+          pip install -r requirements.txt
 
       - name: Download data
         run: |
@@ -399,6 +401,14 @@ jobs:
           print('✅ Clients can be initialized (when data is available)')
           "
 
+      - name: Verify pycryptodome for Flower
+        run: |
+          python -c "
+          from Crypto.Protocol.SecretSharing import Shamir
+          import flwr as fl
+          print('✅ Flower secure aggregation crypto available')
+          "
+
   # ========================================
   # JOB 7: INTEGRATION TEST (MINI TRAINING)
   # ========================================
@@ -418,12 +428,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install ultralytics==8.0.196
-          pip install pillow pyyaml
-          pip install --force-reinstall "numpy<2.0.0"
-          pip install flwr==1.5.0 --no-deps
-          pip install grpcio protobuf cryptography
+          pip install -r requirements.txt
 
       - name: Download data
         run: |
@@ -502,8 +507,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 What Was Tested:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ NumPy 1.x compatibility fixed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ NumPy 1.x compatibility verified" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ PyTorch, YOLOv8, and Flower installed correctly" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ pycryptodome installed for secure aggregation" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ YOLOv8 model creates and runs forward pass" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Model serialization works (Flower compatibility)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Flower clients initialize correctly" >> $GITHUB_STEP_SUMMARY
@@ -516,6 +522,8 @@ jobs:
           echo "2. Run: \`python scripts/check_data.py\`" >> $GITHUB_STEP_SUMMARY
           echo "3. Run: \`python server/server_flower.py\`" >> $GITHUB_STEP_SUMMARY
           echo "4. Run: \`python clients/node1/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
+          echo "5. Run: \`python clients/node2/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
+          echo "6. Run: \`python clients/node3/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Print Final Status
         run: |
@@ -524,9 +532,10 @@ jobs:
           echo "================================================"
           echo ""
           echo "Core components tested successfully:"
-          echo "  ✅ Dependencies (NumPy 1.x compatibility)"
+          echo "  ✅ Dependencies (pycryptodome + NumPy 1.x)"
           echo "  ✅ YOLOv8 model"
           echo "  ✅ Flower clients"
+          echo "  ✅ Secure aggregation crypto"
           echo ""
           echo "Data-dependent tests skipped (expected in CI)"
           echo ""
