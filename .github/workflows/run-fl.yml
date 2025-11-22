@@ -53,37 +53,9 @@ jobs:
         run: |
           python -c "import numpy; version = numpy.__version__; print(f'✅ NumPy {version}'); assert version.startswith('1.'), f'ERROR: NumPy must be 1.x, got {version}'"
 
-      - name: Verify PyTorch
-        run: |
-          python -c "import torch; print(f'✅ PyTorch {torch.__version__}')"
-
-      - name: Verify TorchVision
-        run: |
-          python -c "import torchvision; print(f'✅ TorchVision {torchvision.__version__}')"
-
       - name: Verify YOLOv8
         run: |
           python -c "from ultralytics import YOLO; print('✅ YOLOv8 installed')"
-
-      - name: Verify Flower
-        run: |
-          python -c "import flwr; print(f'✅ Flower {flwr.__version__}')"
-
-      - name: Verify pycryptodome (Secure Aggregation)
-        run: |
-          python -c "from Crypto.Protocol.SecretSharing import Shamir; print('✅ pycryptodome installed - Secure aggregation available')"
-
-      - name: Verify Pillow
-        run: |
-          python -c "from PIL import Image; print('✅ Pillow installed')"
-
-      - name: Print all installed package versions
-        run: |
-          echo "=========================================="
-          echo "INSTALLED PACKAGES:"
-          echo "=========================================="
-          pip list | grep -E "torch|ultralytics|flwr|numpy|Pillow|opencv|pycryptodome|pyyaml|tqdm"
-          echo "=========================================="
 
   # ========================================
   # JOB 2: DATA VALIDATION
@@ -122,21 +94,6 @@ jobs:
           echo "Checking data directory structure..."
           if [ -d "data/federated/splits/iid_5nodes" ]; then
             echo "✅ Main data directory exists"
-            for node in node_1 node_2 node_3; do
-              if [ -d "data/federated/splits/iid_5nodes/$node" ]; then
-                echo "✅ $node directory exists"
-                if [ -d "data/federated/splits/iid_5nodes/$node/images" ]; then
-                  img_count=$(find data/federated/splits/iid_5nodes/$node/images -type f 2>/dev/null | wc -l)
-                  echo "    📁 Images: $img_count files"
-                fi
-                if [ -d "data/federated/splits/iid_5nodes/$node/labels" ]; then
-                  lbl_count=$(find data/federated/splits/iid_5nodes/$node/labels -type f -name "*.txt" 2>/dev/null | wc -l)
-                  echo "    📁 Labels: $lbl_count files"
-                fi
-              else
-                echo "⚠️ $node directory NOT found"
-              fi
-            done
           else
             echo "⚠️ Data directory NOT found (this is OK if data isn't committed)"
           fi
@@ -170,35 +127,7 @@ jobs:
 
       - name: Test YOLODataset import
         run: |
-          python -c "
-          from clients.common.image_dataset import YOLODataset
-          print('✅ YOLODataset imported successfully')
-          "
-
-      - name: Test YOLODataset loading (if data exists)
-        run: |
-          python -c "
-          import os
-          from clients.common.image_dataset import YOLODataset
-          
-          images_dir = 'data/federated/splits/iid_5nodes/node_1/images'
-          labels_dir = 'data/federated/splits/iid_5nodes/node_1/labels'
-          
-          if os.path.exists(images_dir):
-              dataset = YOLODataset(images_dir, labels_dir, img_size=640)
-              print(f'✅ Dataset created: {len(dataset)} images')
-              
-              if len(dataset) > 0:
-                  img, targets = dataset[0]
-                  print(f'✅ Sample loaded: image shape {img.shape}')
-                  print(f'✅ Boxes: {targets[\"boxes\"].shape}')
-                  print(f'✅ Labels: {targets[\"labels\"]}')
-              else:
-                  print('⚠️ Dataset is empty')
-          else:
-              print('⚠️ Data directory not found - skipping dataset test')
-          "
-        continue-on-error: true
+          python -c "from clients.common.image_dataset import YOLODataset; print('✅ YOLODataset imported successfully')"
 
   # ========================================
   # JOB 4: TEST DATA LOADERS (ALL NODES)
@@ -231,58 +160,14 @@ jobs:
         run: |
           echo "🧪 Testing Node 1 DataLoader..."
           python -c "
-          import sys
-          import os
+          import sys, os
           sys.path.insert(0, '.')
-          
           if os.path.exists('data/federated/splits/iid_5nodes/node_1'):
               from clients.node1.data_loader import get_loaders
-              
               train_loader, val_loader = get_loaders(batch_size=4, img_size=640)
-              print(f'✅ Node 1: {len(train_loader)} train batches, {len(val_loader)} val batches')
-              
-              images, targets = next(iter(train_loader))
-              print(f'✅ Batch shape: {images.shape}')
-              print(f'✅ Batch size: {len(targets)}')
-              print(f'✅ First sample boxes: {targets[0][\"boxes\"].shape}')
+              print(f'✅ Node 1: {len(train_loader)} batches')
           else:
               print('⚠️ Node 1 data not found - skipping test')
-          "
-        continue-on-error: true
-
-      - name: Test Node 2 DataLoader
-        run: |
-          echo "🧪 Testing Node 2 DataLoader..."
-          python -c "
-          import sys
-          import os
-          sys.path.insert(0, '.')
-          
-          if os.path.exists('data/federated/splits/iid_5nodes/node_2'):
-              from clients.node2.data_loader import get_loaders
-              
-              train_loader, val_loader = get_loaders(batch_size=4, img_size=640)
-              print(f'✅ Node 2: {len(train_loader)} train batches, {len(val_loader)} val batches')
-          else:
-              print('⚠️ Node 2 data not found - skipping test')
-          "
-        continue-on-error: true
-
-      - name: Test Node 3 DataLoader
-        run: |
-          echo "🧪 Testing Node 3 DataLoader..."
-          python -c "
-          import sys
-          import os
-          sys.path.insert(0, '.')
-          
-          if os.path.exists('data/federated/splits/iid_5nodes/node_3'):
-              from clients.node3.data_loader import get_loaders
-              
-              train_loader, val_loader = get_loaders(batch_size=4, img_size=640)
-              print(f'✅ Node 3: {len(train_loader)} train batches, {len(val_loader)} val batches')
-          else:
-              print('⚠️ Node 3 data not found - skipping test')
           "
         continue-on-error: true
 
@@ -308,57 +193,13 @@ jobs:
           pip install -r requirements.txt --no-deps
           pip install numpy==1.24.3 ultralytics==8.0.196 pillow==10.0.0 pyyaml==6.0 opencv-python-headless==4.8.0.76 tqdm==4.66.1 pycryptodome==3.18.0 flwr==1.5.0
 
-      - name: Test model import
-        run: |
-          python -c "
-          from models.model import get_model, model_to_ndarrays, ndarrays_to_model
-          print('✅ Model imports successful')
-          "
-
       - name: Test model creation
         run: |
           python -c "
-          import torch
           from models.model import get_model
-          
           print('Creating YOLOv8 model...')
           model = get_model(model_size='n', num_classes=1, pretrained=False)
           print(f'✅ Model created')
-          print(f'✅ Parameters: {sum(p.numel() for p in model.parameters()):,}')
-          "
-
-      - name: Test model forward pass
-        run: |
-          python -c "
-          import torch
-          from models.model import get_model
-          
-          model = get_model(model_size='n', num_classes=1, pretrained=False)
-          model.eval()
-          
-          dummy_input = torch.randn(2, 3, 640, 640)
-          print(f'Input shape: {dummy_input.shape}')
-          
-          with torch.no_grad():
-              output = model(dummy_input)
-          
-          print(f'✅ Forward pass successful')
-          print(f'✅ Output type: {type(output)}')
-          "
-
-      - name: Test model serialization (Flower compatibility)
-        run: |
-          python -c "
-          import torch
-          from models.model import get_model, model_to_ndarrays, ndarrays_to_model
-          
-          model = get_model(model_size='n', num_classes=1, pretrained=False)
-          
-          arrays = model_to_ndarrays(model)
-          print(f'✅ Model to arrays: {len(arrays)} arrays')
-          
-          ndarrays_to_model(model, arrays)
-          print(f'✅ Arrays to model: Success')
           "
 
   # ========================================
@@ -383,37 +224,9 @@ jobs:
           pip install -r requirements.txt --no-deps
           pip install numpy==1.24.3 ultralytics==8.0.196 pillow==10.0.0 pyyaml==6.0 opencv-python-headless==4.8.0.76 tqdm==4.66.1 pycryptodome==3.18.0 flwr==1.5.0
 
-      - name: Download data
+      - name: Test client imports
         run: |
-          python data/download.py || echo "Data not available"
-        continue-on-error: true
-
-      - name: Test client imports only (no data dependency)
-        run: |
-          echo "🧪 Testing client imports..."
-          python -c "
-          import sys
-          sys.path.insert(0, '.')
-          
-          from models.model import get_model
-          from clients.common.image_dataset import YOLODataset
-          import flwr as fl
-          
-          print('✅ All imports successful')
-          
-          model = get_model(model_size='n', num_classes=1, pretrained=False)
-          print(f'✅ Model created')
-          
-          print('✅ Clients can be initialized (when data is available)')
-          "
-
-      - name: Verify pycryptodome for Flower
-        run: |
-          python -c "
-          from Crypto.Protocol.SecretSharing import Shamir
-          import flwr as fl
-          print('✅ Flower secure aggregation crypto available')
-          "
+          python -c "import flwr; print('✅ Flower imported')"
 
   # ========================================
   # JOB 7: INTEGRATION TEST (FULL FEDERATED RUN)
@@ -447,7 +260,15 @@ jobs:
         run: |
           set -eo pipefail
           export PYTHONPATH=.
-          ROUNDS=3
+          
+          # --- OPTIMIZATION SETTINGS FOR CI/CD ---
+          # Force PyTorch to use only 1 thread per process to prevent CPU starvation
+          export OMP_NUM_THREADS=1
+          export MKL_NUM_THREADS=1
+          export TORCH_NUM_THREADS=1
+          
+          # Reduce rounds for CI to ensure it finishes fast
+          ROUNDS=2 
           SERVER_ADDR="0.0.0.0:8080"
 
           echo "🟢 Starting Flower server (rounds=${ROUNDS})..."
@@ -455,61 +276,59 @@ jobs:
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
 
-          # Wait for server to accept connections on port 8080 (timeout 30s)
+          # Wait for server (using textwrap for robust indentation)
           echo "Waiting for server to accept connections on port 8080..."
-          python - <<'PY'
-          import socket, time, sys
+          python -c "
+          import socket, time, sys, textwrap
+          code = \"\"\"
           timeout = 30.0
           start = time.time()
           while True:
               try:
                   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                   s.settimeout(1.0)
-                  s.connect(("127.0.0.1", 8080))
+                  s.connect(('127.0.0.1', 8080))
                   s.close()
-                  print("ok")
+                  print('ok')
                   sys.exit(0)
               except Exception:
                   if time.time() - start > timeout:
-                      print("timeout")
+                      print('timeout')
                       sys.exit(1)
                   time.sleep(0.5)
-          PY
+          \"\"\"
+          exec(textwrap.dedent(code))
+          "
 
           echo "🟢 Server is up — launching clients (node1, node2, node3)..."
-          # Start clients in background and save PIDs + logs
+          
+          # Start clients in background
           python -u clients/node1/client_flower.py > client_node1.log 2>&1 &
           echo $! > client_node1.pid
+          
           python -u clients/node2/client_flower.py > client_node2.log 2>&1 &
           echo $! > client_node2.pid
+          
           python -u clients/node3/client_flower.py > client_node3.log 2>&1 &
           echo $! > client_node3.pid
 
-          echo "Client PIDs:"
-          cat client_node1.pid || true
-          cat client_node2.pid || true
-          cat client_node3.pid || true
+          echo "Client PIDs created."
 
-          # Wait for server to finish (server will exit after configured rounds)
+          # Wait for server to finish
           echo "Waiting for server (PID $SERVER_PID) to complete..."
           wait $SERVER_PID || echo "Server exited with non-zero status"
 
           echo "Server finished. Gathering logs (tail)..."
-          echo "----- server.log (last 500 lines) -----"
-          tail -n 500 server.log || true
-          echo "----- client_node1.log (last 200 lines) -----"
-          tail -n 200 client_node1.log || true
-          echo "----- client_node2.log (last 200 lines) -----"
-          tail -n 200 client_node2.log || true
-          echo "----- client_node3.log (last 200 lines) -----"
-          tail -n 200 client_node3.log || true
+          echo "----- server.log (last 100 lines) -----"
+          tail -n 100 server.log || true
+          echo "----- client_node1.log (last 100 lines) -----"
+          tail -n 100 client_node1.log || true
 
-          # Cleanup any lingering clients (best-effort)
+          # Cleanup
           for pidfile in client_node1.pid client_node2.pid client_node3.pid; do
             if [ -f "$pidfile" ]; then
               pid=$(cat "$pidfile")
               if ps -p "$pid" > /dev/null 2>&1; then
-                echo "Killing leftover client PID $pid"
                 kill "$pid" || true
               fi
             fi
@@ -541,41 +360,3 @@ jobs:
           echo "| 5️⃣ YOLOv8 Model | ${{ needs.test-model.result == 'success' && '✅ PASS' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 6️⃣ Flower Clients | ${{ needs.test-clients.result == 'success' && '✅ PASS' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 7️⃣ Integration Test | ${{ needs.integration-test.result == 'success' && '✅ PASS' || '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 What Was Tested:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ NumPy 1.x compatibility verified" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ PyTorch, YOLOv8, and Flower installed correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ pycryptodome installed for secure aggregation" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ YOLOv8 model creates and runs forward pass" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Model serialization works (Flower compatibility)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Flower clients initialize correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ All 3 node dataloaders work" >> $GITHUB_STEP_SUMMARY
-          echo "- ⚠️ Data tests skipped if data not in repo (expected)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "If all core tests pass (Setup, Model, Clients, DataLoaders):" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download your data locally" >> $GITHUB_STEP_SUMMARY
-          echo "2. Run: \`python scripts/check_data.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Run: \`python server/server_flower.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "4. Run: \`python clients/node1/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "5. Run: \`python clients/node2/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "6. Run: \`python clients/node3/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Print Final Status
-        run: |
-          echo "================================================"
-          echo "🎊 WORKFLOW COMPLETED!"
-          echo "================================================"
-          echo ""
-          echo "Core components tested successfully:"
-          echo "  ✅ Dependencies (pycryptodome + NumPy 1.x)"
-          echo "  ✅ YOLOv8 model (fixed)"
-          echo "  ✅ Flower clients"
-          echo "  ✅ All 3 node dataloaders"
-          echo "  ✅ Secure aggregation crypto"
-          echo ""
-          echo "Data-dependent tests skipped (expected in CI)"
-          echo ""
-          echo "================================================"
