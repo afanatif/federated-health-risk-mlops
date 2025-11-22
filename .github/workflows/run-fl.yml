@@ -416,13 +416,13 @@ jobs:
           "
 
   # ========================================
-  # JOB 7: INTEGRATION TEST (MINI TRAINING)
+  # JOB 7: INTEGRATION TEST (FULL FEDERATED RUN)
   # ========================================
   integration-test:
-    name: Integration Test - Mini Training
+    name: Integration Test - Full Federated Run
     runs-on: ubuntu-latest
     needs: test-clients
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -443,46 +443,79 @@ jobs:
           python data/download.py || echo "Data not available"
         continue-on-error: true
 
-      - name: Test single training iteration (if data exists)
+      - name: Run federated server + 3 clients (integration)
         run: |
-          echo "🧪 Testing single training iteration..."
-          python -c "
-          import sys
-          import os
-          import torch
-          sys.path.insert(0, '.')
-          
-          from models.model import get_model
-          
-          print('Setting up mini training test...')
-          
-          model = get_model(model_size='n', num_classes=1, pretrained=False)
-          print('✅ Model created')
-          
-          if os.path.exists('data/federated/splits/iid_5nodes/node_1'):
-              from clients.node1.data_loader import get_loaders
-              
-              train_loader, _ = get_loaders(batch_size=2)
-              print('✅ Data loaded')
-              
-              images, targets = next(iter(train_loader))
-              print(f'✅ Batch loaded: {images.shape}')
-              print(f'✅ Targets: {len(targets)} samples')
-              
-              model.model.model.eval()
-              with torch.no_grad():
-                  output = model(images)
-              
-              print('✅ Forward pass successful')
-              print('✅ Integration test PASSED')
-          else:
-              print('⚠️  Data not available - testing model only')
-              dummy_input = torch.randn(2, 3, 640, 640)
-              with torch.no_grad():
-                  output = model(dummy_input)
-              print('✅ Model forward pass works')
-          "
-        continue-on-error: true
+          set -euo pipefail
+          export PYTHONPATH=.
+          ROUNDS=3
+          SERVER_ADDR="0.0.0.0:8080"
+
+          echo "🟢 Starting Flower server (rounds=${ROUNDS})..."
+          python -u server/server_flower.py --rounds ${ROUNDS} --addr ${SERVER_ADDR} > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+
+          # Wait for server to accept connections on port 8080 (timeout 30s)
+          echo "Waiting for server to accept connections on port 8080..."
+          python - <<'PY' || ( echo "Server did not start in time"; exit 1 )
+import socket, time, sys
+timeout = 30.0
+start = time.time()
+while True:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1.0)
+        s.connect(("127.0.0.1", 8080))
+        s.close()
+        print("ok")
+        sys.exit(0)
+    except Exception:
+        if time.time() - start > timeout:
+            print("timeout")
+            sys.exit(1)
+        time.sleep(0.5)
+PY
+
+          echo "🟢 Server is up — launching clients (node1, node2, node3)..."
+          # Start clients in background and save PIDs + logs
+          python -u clients/node1/client_flower.py > client_node1.log 2>&1 &
+          echo $! > client_node1.pid
+          python -u clients/node2/client_flower.py > client_node2.log 2>&1 &
+          echo $! > client_node2.pid
+          python -u clients/node3/client_flower.py > client_node3.log 2>&1 &
+          echo $! > client_node3.pid
+
+          echo "Client PIDs:"
+          cat client_node1.pid || true
+          cat client_node2.pid || true
+          cat client_node3.pid || true
+
+          # Wait for server to finish (server will exit after configured rounds)
+          echo "Waiting for server (PID $SERVER_PID) to complete..."
+          wait $SERVER_PID || echo "Server exited with non-zero status"
+
+          echo "Server finished. Gathering logs (tail)..."
+          echo "----- server.log (last 500 lines) -----"
+          tail -n 500 server.log || true
+          echo "----- client_node1.log (last 200 lines) -----"
+          tail -n 200 client_node1.log || true
+          echo "----- client_node2.log (last 200 lines) -----"
+          tail -n 200 client_node2.log || true
+          echo "----- client_node3.log (last 200 lines) -----"
+          tail -n 200 client_node3.log || true
+
+          # Cleanup any lingering clients (best-effort)
+          for pidfile in client_node1.pid client_node2.pid client_node3.pid; do
+            if [ -f "$pidfile" ]; then
+              pid=$(cat "$pidfile")
+              if ps -p "$pid" > /dev/null 2>&1; then
+                echo "Killing leftover client PID $pid"
+                kill "$pid" || true
+              fi
+            fi
+          done
+
+          echo "✅ Full federated run complete."
 
   # ========================================
   # JOB 8: SUMMARY & REPORT
