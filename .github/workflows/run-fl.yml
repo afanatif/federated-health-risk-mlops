@@ -458,23 +458,23 @@ jobs:
           # Wait for server to accept connections on port 8080 (timeout 30s)
           echo "Waiting for server to accept connections on port 8080..."
           python - <<'PY'
-import socket, time, sys
-timeout = 30.0
-start = time.time()
-while True:
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(1.0)
-        s.connect(("127.0.0.1", 8080))
-        s.close()
-        print("ok")
-        sys.exit(0)
-    except Exception:
-        if time.time() - start > timeout:
-            print("timeout")
-            sys.exit(1)
-        time.sleep(0.5)
-PY
+          import socket, time, sys
+          timeout = 30.0
+          start = time.time()
+          while True:
+              try:
+                  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                  s.settimeout(1.0)
+                  s.connect(("127.0.0.1", 8080))
+                  s.close()
+                  print("ok")
+                  sys.exit(0)
+              except Exception:
+                  if time.time() - start > timeout:
+                      print("timeout")
+                      sys.exit(1)
+                  time.sleep(0.5)
+          PY
 
           echo "🟢 Server is up — launching clients (node1, node2, node3)..."
           # Start clients in background and save PIDs + logs
