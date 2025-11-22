@@ -1,7 +1,6 @@
 """
 Data loader for node2.
-Flexibly handles different calling patterns from client_flower.py
-Fixed: drop_last=True to prevent BatchNorm errors with single-sample batches
+Updated to load from: data/federated/splits/iid_5nodes/node_2/
 """
 import os
 import torch
@@ -14,7 +13,7 @@ def get_loaders(images_dir=None, labels_dir=None, batch_size=16, val_frac=0.1, s
     Create train and validation data loaders.
     
     Args:
-        images_dir: Path to images directory, or parent data directory, or None for auto-detect
+        images_dir: Path to images directory, or None for auto-detect
         labels_dir: Path to labels directory or None
         batch_size: Batch size for loaders
         val_frac: Fraction of data to use for validation
@@ -26,38 +25,14 @@ def get_loaders(images_dir=None, labels_dir=None, batch_size=16, val_frac=0.1, s
     
     # Auto-detect paths if not provided
     if images_dir is None:
-        # Default: use the standard location relative to this file
-        current_file = os.path.abspath(__file__)
-        node_dir = os.path.dirname(current_file)  # clients/node2/
-        data_dir = os.path.join(node_dir, "data")
-        images_dir = os.path.join(data_dir, "images")
-        labels_dir = os.path.join(data_dir, "labels")
+        # NEW PATH: data/federated/splits/iid_5nodes/node_2/
+        images_dir = "data/federated/splits/iid_5nodes/node_2/images"
+        labels_dir = "data/federated/splits/iid_5nodes/node_2/labels"
     else:
-        # Check if images_dir is actually a parent directory containing images/ and labels/
+        # If only images_dir provided, try to find labels
         if labels_dir is None:
-            # Single argument provided - could be data dir or images dir
-            if os.path.basename(images_dir) != "images":
-                # Assume it's a parent directory
-                potential_images = os.path.join(images_dir, "images")
-                potential_labels = os.path.join(images_dir, "labels")
-                
-                if os.path.isdir(potential_images) and os.path.isdir(potential_labels):
-                    # It's a parent directory
-                    labels_dir = potential_labels
-                    images_dir = potential_images
-                else:
-                    # Try to find labels next to images
-                    parent = os.path.dirname(images_dir)
-                    labels_dir = os.path.join(parent, "labels")
-            else:
-                # images_dir already points to images folder
-                parent = os.path.dirname(images_dir)
-                labels_dir = os.path.join(parent, "labels")
-    
-    # Ensure both paths are set
-    if labels_dir is None:
-        parent = os.path.dirname(images_dir)
-        labels_dir = os.path.join(parent, "labels")
+            parent = os.path.dirname(images_dir)
+            labels_dir = os.path.join(parent, "labels")
     
     print(f"[Node2 DataLoader] Loading data from:")
     print(f"  Images: {images_dir}")
@@ -83,11 +58,7 @@ def get_loaders(images_dir=None, labels_dir=None, batch_size=16, val_frac=0.1, s
     train_count = total - val_count
     
     # Create generator for reproducible splits
-    generator = None
-    try:
-        generator = torch.Generator().manual_seed(seed)
-    except Exception:
-        pass
+    generator = torch.Generator().manual_seed(seed)
     
     if train_count <= 0:
         print("[Node2 DataLoader] Warning: Dataset too small, using all for train and val")
