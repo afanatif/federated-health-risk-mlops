@@ -1,0 +1,7 @@
+dataset:
+  raw: "data/Pothole.v1i.yolov8"
+  splits: "data/federated_base/splits"
+federated:
+  num_nodes: 5
+  strategy: "iid"
+  random_seed: 42
