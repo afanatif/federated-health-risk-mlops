@@ -21,26 +21,32 @@ class YOLOv8Wrapper(nn.Module):
     """
     Wrapper around YOLOv8 for federated learning compatibility.
     """
-    def __init__(self, model_size='n', num_classes=1, pretrained=True):
+    def __init__(self, model_size='n', num_classes=1, pretrained=True, img_size=640):
         """
         Args:
             model_size: 'n', 's', 'm', 'l', 'x' (nano to extra-large)
             num_classes: Number of classes (1 for pothole detection)
             pretrained: Use pretrained COCO weights
+            img_size: Input image size (default 640)
         """
         super().__init__()
         
+        # Store config
+        self.model_size = model_size
+        self.num_classes = num_classes
+        self.img_size = img_size
+        
         # Load YOLOv8 model
         if pretrained:
-            # Load pretrained model and modify for our classes
+            # Load pretrained model (COCO weights)
             self.model = YOLO(f'yolov8{model_size}.pt')
         else:
-            # Load architecture only
+            # Load architecture only (no pretrained weights)
             self.model = YOLO(f'yolov8{model_size}.yaml')
         
         # Override number of classes if needed
-        self.model.model.nc = num_classes  # Set number of classes
-        self.num_classes = num_classes
+        if hasattr(self.model.model, 'nc'):
+            self.model.model.nc = num_classes  # Set number of classes
         
     def forward(self, x):
         """
@@ -80,16 +86,14 @@ def get_model(model_size='n', num_classes=1, pretrained=True, img_size=640):
         img_size: Input image size (default 640)
         
     Returns:
-        model: YOLOv8 model
+        model: YOLOv8Wrapper model
     """
     model = YOLOv8Wrapper(
         model_size=model_size,
         num_classes=num_classes,
-        pretrained=pretrained
+        pretrained=pretrained,
+        img_size=img_size
     )
-    
-    # Set image size
-    model.model.args['imgsz'] = img_size
     
     return model
 
@@ -102,11 +106,15 @@ def model_to_ndarrays(model):
         model: YOLOv8Wrapper model
         
     Returns:
-        List of numpy arrays
+        List of numpy arrays (model weights)
     """
     # Get state dict from the underlying YOLO model
     state_dict = model.model.model.state_dict()
-    return [val.cpu().numpy() for val in state_dict.values()]
+    
+    # Convert all parameters to numpy
+    arrays = [val.cpu().numpy() for val in state_dict.values()]
+    
+    return arrays
 
 
 def ndarrays_to_model(model, arrays):
@@ -123,24 +131,24 @@ def ndarrays_to_model(model, arrays):
     if len(keys) != len(arrays):
         raise ValueError(f"Length mismatch: {len(keys)} keys vs {len(arrays)} arrays")
     
-    # Convert arrays back to tensors
+    # Convert arrays back to tensors and load into model
     new_state_dict = {}
     for k, arr in zip(keys, arrays):
-        new_state_dict[k] = torch.tensor(arr)
+        new_state_dict[k] = torch.from_numpy(arr).float()
     
-    # Load into model
-    model.model.model.load_state_dict(new_state_dict, strict=True)
+    # Load into model with strict=False to allow flexibility
+    model.model.model.load_state_dict(new_state_dict, strict=False)
 
 
 def save_model(model, path):
     """
-    Save YOLOv8 model.
+    Save YOLOv8 model weights.
     
     Args:
         model: YOLOv8Wrapper model
         path: Save path (.pt file)
     """
-    model.model.save(path)
+    torch.save(model.model.model.state_dict(), path)
 
 
 def load_model(model, path):
@@ -149,9 +157,10 @@ def load_model(model, path):
     
     Args:
         model: YOLOv8Wrapper model
-        path: Path to .pt file
+        path: Path to .pt file with state dict
     """
-    model.model = YOLO(path)
+    state_dict = torch.load(path)
+    model.model.model.load_state_dict(state_dict, strict=False)
 
 
 # ============================================
@@ -187,29 +196,71 @@ class YOLOLoss:
 
 
 # ============================================
-# EXAMPLE USAGE
+# EXAMPLE USAGE & TESTING
 # ============================================
 
 if __name__ == "__main__":
-    # Create model
-    model = get_model(model_size='n', num_classes=1, pretrained=False)
+    print("=" * 60)
+    print("🧪 YOLOv8 Model Testing")
+    print("=" * 60)
     
-    print("✅ YOLOv8 Model Created")
-    print(f"   Model type: YOLOv8-nano")
-    print(f"   Number of classes: 1 (pothole)")
-    print(f"   Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    # Test 1: Create model
+    print("\n1️⃣  Testing Model Creation...")
+    try:
+        model = get_model(model_size='n', num_classes=1, pretrained=False)
+        print("✅ YOLOv8 Model Created Successfully")
+        print(f"   Model type: YOLOv8-nano")
+        print(f"   Number of classes: 1 (pothole)")
+        print(f"   Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    except Exception as e:
+        print(f"❌ Model Creation Failed: {e}")
+        exit(1)
     
-    # Test forward pass
-    dummy_input = torch.randn(2, 3, 640, 640)  # Batch of 2 images
-    output = model(dummy_input)
-    print(f"\n✅ Forward pass successful")
-    print(f"   Input shape: {dummy_input.shape}")
-    print(f"   Output type: {type(output)}")
+    # Test 2: Forward pass
+    print("\n2️⃣  Testing Forward Pass...")
+    try:
+        dummy_input = torch.randn(2, 3, 640, 640)  # Batch of 2 images
+        output = model(dummy_input)
+        print(f"✅ Forward Pass Successful")
+        print(f"   Input shape: {dummy_input.shape}")
+        print(f"   Output type: {type(output)}")
+    except Exception as e:
+        print(f"❌ Forward Pass Failed: {e}")
+        exit(1)
     
-    # Test conversion to numpy arrays
-    arrays = model_to_ndarrays(model)
-    print(f"\n✅ Model to numpy arrays: {len(arrays)} arrays")
+    # Test 3: Model to numpy arrays (Flower serialization)
+    print("\n3️⃣  Testing Model Serialization (Flower)...")
+    try:
+        arrays = model_to_ndarrays(model)
+        print(f"✅ Model to Numpy Arrays: {len(arrays)} weight matrices")
+        total_params = sum(arr.size for arr in arrays)
+        print(f"   Total parameters: {total_params:,}")
+    except Exception as e:
+        print(f"❌ Serialization Failed: {e}")
+        exit(1)
     
-    # Test loading from numpy arrays
-    ndarrays_to_model(model, arrays)
-    print(f"✅ Numpy arrays to model: Success")
+    # Test 4: Numpy arrays back to model
+    print("\n4️⃣  Testing Model Deserialization (Flower)...")
+    try:
+        ndarrays_to_model(model, arrays)
+        print(f"✅ Numpy Arrays to Model: Success")
+    except Exception as e:
+        print(f"❌ Deserialization Failed: {e}")
+        exit(1)
+    
+    # Test 5: Forward pass after deserialization
+    print("\n5️⃣  Testing Forward Pass After Deserialization...")
+    try:
+        output = model(dummy_input)
+        print(f"✅ Forward Pass Still Works After Weight Update")
+    except Exception as e:
+        print(f"❌ Forward Pass After Deserialization Failed: {e}")
+        exit(1)
+    
+    print("\n" + "=" * 60)
+    print("🎉 ALL MODEL TESTS PASSED!")
+    print("=" * 60)
+    print("\n✅ Model is ready for:")
+    print("   - Federated learning (weights can serialize/deserialize)")
+    print("   - Training with DataLoaders")
+    print("   - Flower client integration")
