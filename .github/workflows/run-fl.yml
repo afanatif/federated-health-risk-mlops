@@ -445,7 +445,7 @@ jobs:
 
       - name: Run federated server + 3 clients (integration)
         run: |
-          set -euo pipefail
+          set -eo pipefail
           export PYTHONPATH=.
           ROUNDS=3
           SERVER_ADDR="0.0.0.0:8080"
@@ -457,7 +457,7 @@ jobs:
 
           # Wait for server to accept connections on port 8080 (timeout 30s)
           echo "Waiting for server to accept connections on port 8080..."
-          python - <<'PY' || ( echo "Server did not start in time"; exit 1 )
+          python - <<'PY'
 import socket, time, sys
 timeout = 30.0
 start = time.time()
@@ -534,13 +534,13 @@ PY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 1️⃣ Setup & Dependencies | ${{ needs.setup.result == 'success' && '✅ PASS' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 2️⃣ Data Validation | ${{ needs.validate-data.result == 'success' && '✅ PASS' || '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 3️⃣ YOLO Dataset | ${{ needs.test-dataset.result == 'success' && '✅ PASS' || '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 4️⃣ Data Loaders (All Nodes) | ${{ needs.test-dataloaders.result == 'success' && '✅ PASS' || '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 5️⃣ YOLOv8 Model | ${{ needs.test-model.result == 'success' && '✅ PASS' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 6️⃣ Flower Clients | ${{ needs.test-clients.result == 'success' && '✅ PASS' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 7️⃣ Integration Test | ${{ needs.integration-test.result == 'success' && '✅ PASS' || '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 1️⃣ Setup & Dependencies | ${{ needs.setup.result == 'success' ? '✅ PASS' : '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2️⃣ Data Validation | ${{ needs.validate-data.result == 'success' ? '✅ PASS' : '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3️⃣ YOLO Dataset | ${{ needs.test-dataset.result == 'success' ? '✅ PASS' : '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4️⃣ Data Loaders (All Nodes) | ${{ needs.test-dataloaders.result == 'success' ? '✅ PASS' : '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 5️⃣ YOLOv8 Model | ${{ needs.test-model.result == 'success' ? '✅ PASS' : '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 6️⃣ Flower Clients | ${{ needs.test-clients.result == 'success' ? '✅ PASS' : '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 7️⃣ Integration Test | ${{ needs.integration-test.result == 'success' ? '✅ PASS' : '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 What Was Tested:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
