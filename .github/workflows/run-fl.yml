@@ -40,23 +40,24 @@ jobs:
           python -m pip install --upgrade pip
           pip --version
 
-      - name: Install NumPy 1.x (FIX for compatibility)
-        run: |
-          pip install "numpy<2.0.0"
-          python -c "import numpy; print(f'✅ NumPy {numpy.__version__}')"
-
       - name: Install PyTorch (CPU version for CI)
         run: |
           pip install torch==2.0.0 torchvision==0.15.0 --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Install YOLOv8 and Flower
+      - name: Install YOLOv8 and other packages
         run: |
           pip install ultralytics==8.0.196
-          pip install flwr==1.5.0
-
-      - name: Install other dependencies
-        run: |
           pip install pillow pyyaml opencv-python-headless tqdm
+
+      - name: Force NumPy 1.x AFTER all installs (CRITICAL FIX)
+        run: |
+          pip install --force-reinstall "numpy<2.0.0"
+          python -c "import numpy; print(f'✅ NumPy {numpy.__version__} (downgraded)')"
+
+      - name: Install Flower with NumPy 1.x
+        run: |
+          pip install flwr==1.5.0 --no-deps
+          pip install grpcio protobuf cryptography
 
       - name: Verify installations
         run: |
@@ -85,9 +86,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "numpy<2.0.0"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install pillow
+          pip install --force-reinstall "numpy<2.0.0"
 
       - name: Download data
         run: |
@@ -141,9 +142,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "numpy<2.0.0"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install pillow
+          pip install --force-reinstall "numpy<2.0.0"
 
       - name: Download data
         run: |
@@ -200,9 +201,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "numpy<2.0.0"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install pillow
+          pip install --force-reinstall "numpy<2.0.0"
 
       - name: Download data
         run: |
@@ -286,10 +287,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "numpy<2.0.0"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install ultralytics==8.0.196
           pip install pillow pyyaml
+          pip install --force-reinstall "numpy<2.0.0"
 
       - name: Test model import
         run: |
@@ -365,11 +366,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "numpy<2.0.0"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install ultralytics==8.0.196
-          pip install flwr==1.5.0
           pip install pillow pyyaml
+          pip install --force-reinstall "numpy<2.0.0"
+          pip install flwr==1.5.0 --no-deps
+          pip install grpcio protobuf cryptography
 
       - name: Download data
         run: |
@@ -416,11 +418,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "numpy<2.0.0"
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install ultralytics==8.0.196
-          pip install flwr==1.5.0
           pip install pillow pyyaml
+          pip install --force-reinstall "numpy<2.0.0"
+          pip install flwr==1.5.0 --no-deps
+          pip install grpcio protobuf cryptography
 
       - name: Download data
         run: |
