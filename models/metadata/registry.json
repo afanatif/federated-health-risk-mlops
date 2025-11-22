@@ -1,0 +1,44 @@
+[
+  {
+    "version": "weights_v20251123_035729",
+    "file_name": "weights_v20251123_035729.pt",
+    "path": "models/archive/weights_v20251123_035729.pt",
+    "registered_at": "20251123_035729",
+    "metrics": {
+      "mAP50": 0.7,
+      "mAP50_95": 0.5,
+      "_passed": true,
+      "_report_path": "mlops/evaluate/reports/weights.json"
+    },
+    "hash_md5": "654fad199ca13466999aade12126e13c",
+    "status": "archived"
+  },
+  {
+    "version": "weights_v20251123_040104",
+    "file_name": "weights_v20251123_040104.pt",
+    "path": "models/archive/weights_v20251123_040104.pt",
+    "registered_at": "20251123_040104",
+    "metrics": {
+      "mAP50": 0.7,
+      "mAP50_95": 0.5,
+      "_passed": true,
+      "_report_path": "mlops/evaluate/reports/weights.json"
+    },
+    "hash_md5": "654fad199ca13466999aade12126e13c",
+    "status": "archived"
+  },
+  {
+    "version": "weights_v20251123_040722",
+    "file_name": "weights_v20251123_040722.pt",
+    "path": "models/archive/weights_v20251123_040722.pt",
+    "registered_at": "20251123_040722",
+    "metrics": {
+      "mAP50": 0.7,
+      "mAP50_95": 0.5,
+      "_passed": true,
+      "_report_path": "mlops/evaluate/reports/weights.json"
+    },
+    "hash_md5": "654fad199ca13466999aade12126e13c",
+    "status": "archived"
+  }
+]

@@ -1,0 +1,28 @@
+project_root: "."
+
+data:
+  root: "data"
+  yolo_dataset: "data/Pothole.v1i.yolov8"
+  federated_root: "data/federated"
+
+models:
+  root: "models"
+  incoming: "models/incoming"
+  blessed: "models/blessed"
+  rejected: "models/rejected"
+  archive: "models/archive"
+  metadata: "models/metadata"
+
+evaluation:
+  thresholds:
+    mAP50: 0.6
+    mAP50_95: 0.4
+  reports_dir: "mlops/evaluate/reports"
+  test_data_yaml: "data/Pothole.v1i.yolov8/data.yaml"
+
+registry:
+  enable_hashing: true
+  save_on_register: true
+
+logging:
+  config: "mlops/config/logging.yaml"
