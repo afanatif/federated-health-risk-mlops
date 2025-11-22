@@ -109,7 +109,7 @@ jobs:
 
       - name: Download data
         run: |
-          python data/download.py || echo "⚠️  Data download script not found or failed"
+          python data/download.py || echo "⚠️ Data download script not found or failed"
         continue-on-error: true
 
       - name: Run data validation
@@ -127,18 +127,18 @@ jobs:
                 echo "✅ $node directory exists"
                 if [ -d "data/federated/splits/iid_5nodes/$node/images" ]; then
                   img_count=$(find data/federated/splits/iid_5nodes/$node/images -type f 2>/dev/null | wc -l)
-                  echo "   📁 Images: $img_count files"
+                  echo "    📁 Images: $img_count files"
                 fi
                 if [ -d "data/federated/splits/iid_5nodes/$node/labels" ]; then
                   lbl_count=$(find data/federated/splits/iid_5nodes/$node/labels -type f -name "*.txt" 2>/dev/null | wc -l)
-                  echo "   📁 Labels: $lbl_count files"
+                  echo "    📁 Labels: $lbl_count files"
                 fi
               else
-                echo "⚠️  $node directory NOT found"
+                echo "⚠️ $node directory NOT found"
               fi
             done
           else
-            echo "⚠️  Data directory NOT found (this is OK if data isn't committed)"
+            echo "⚠️ Data directory NOT found (this is OK if data isn't committed)"
           fi
 
   # ========================================
@@ -194,9 +194,9 @@ jobs:
                   print(f'✅ Boxes: {targets[\"boxes\"].shape}')
                   print(f'✅ Labels: {targets[\"labels\"]}')
               else:
-                  print('⚠️  Dataset is empty')
+                  print('⚠️ Dataset is empty')
           else:
-              print('⚠️  Data directory not found - skipping dataset test')
+              print('⚠️ Data directory not found - skipping dataset test')
           "
         continue-on-error: true
 
@@ -246,7 +246,7 @@ jobs:
               print(f'✅ Batch size: {len(targets)}')
               print(f'✅ First sample boxes: {targets[0][\"boxes\"].shape}')
           else:
-              print('⚠️  Node 1 data not found - skipping test')
+              print('⚠️ Node 1 data not found - skipping test')
           "
         continue-on-error: true
 
@@ -264,7 +264,7 @@ jobs:
               train_loader, val_loader = get_loaders(batch_size=4, img_size=640)
               print(f'✅ Node 2: {len(train_loader)} train batches, {len(val_loader)} val batches')
           else:
-              print('⚠️  Node 2 data not found - skipping test')
+              print('⚠️ Node 2 data not found - skipping test')
           "
         continue-on-error: true
 
@@ -282,7 +282,7 @@ jobs:
               train_loader, val_loader = get_loaders(batch_size=4, img_size=640)
               print(f'✅ Node 3: {len(train_loader)} train batches, {len(val_loader)} val batches')
           else:
-              print('⚠️  Node 3 data not found - skipping test')
+              print('⚠️ Node 3 data not found - skipping test')
           "
         continue-on-error: true
 
