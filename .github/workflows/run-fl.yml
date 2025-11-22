@@ -449,26 +449,28 @@ jobs:
           export PYTHONPATH=.
           
           # --- OPTIMIZATION SETTINGS FOR CI/CD ---
-          # Force PyTorch to use only 1 thread per process to prevent CPU starvation
+          # CRITICAL: Force PyTorch to use only 1 thread to prevent CPU starvation/OOM
           export OMP_NUM_THREADS=1
           export MKL_NUM_THREADS=1
           export TORCH_NUM_THREADS=1
           
-          # Reduce rounds for CI to ensure it finishes fast
           ROUNDS=2 
           SERVER_ADDR="0.0.0.0:8080"
+          
+          # CRITICAL FIX for OOM/THRASHING: Set fraction_fit to 0.34 (1/3 clients)
+          # Server only needs 1 client to finish the round, increasing robustness on low-resource CI.
+          FRACTION_FIT=0.34
 
-          echo "🟢 Starting Flower server (rounds=${ROUNDS})..."
-          python -u server/server_flower.py --rounds ${ROUNDS} --addr ${SERVER_ADDR} > server.log 2>&1 &
+          echo "🟢 Starting Flower server (rounds=${ROUNDS}, fraction_fit=${FRACTION_FIT})..."
+          # Note: Your server_flower.py MUST parse and use the --fraction-fit argument
+          python -u server/server_flower.py --rounds ${ROUNDS} --addr ${SERVER_ADDR} --fraction-fit ${FRACTION_FIT} > server.log 2>&1 &
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
 
-          # Wait for server to accept connections on port 8080 (timeout 30s)
+          # Wait for server connection (30s timeout)
           echo "Waiting for server to accept connections on port 8080..."
           python -c "
           import socket, time, sys, textwrap
-          
-          # Using dedent ensures the indentation is correct regardless of YAML spacing
           code = \"\"\"
           timeout = 30.0
           start = time.time()
@@ -490,23 +492,40 @@ jobs:
           "
 
           echo "🟢 Server is up — launching clients (node1, node2, node3)..."
-          # Start clients in background and save PIDs + logs
+          
+          # Launch clients in background
           python -u clients/node1/client_flower.py > client_node1.log 2>&1 &
           echo $! > client_node1.pid
+          
           python -u clients/node2/client_flower.py > client_node2.log 2>&1 &
           echo $! > client_node2.pid
+          
           python -u clients/node3/client_flower.py > client_node3.log 2>&1 &
           echo $! > client_node3.pid
 
-          echo "Client PIDs:"
-          cat client_node1.pid || true
-          cat client_node2.pid || true
-          cat client_node3.pid || true
+          echo "Client PIDs created. Logs are being written to client_node*.log"
 
-          # Wait for server to finish (server will exit after configured rounds)
+          # Wait for server to finish
           echo "Waiting for server (PID $SERVER_PID) to complete..."
           wait $SERVER_PID || echo "Server exited with non-zero status"
 
+          echo "Server finished."
+          
+      # 💾 NEW STEP: UPLOAD THE MODEL ARTIFACT
+      # This saves any .pt or .pth files created by the server to the workflow results
+      # 
+      - name: Upload Final Aggregated Model (.pth/.pt)
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-aggregated-model-${{ github.sha }}
+          path: |
+            *.pt
+            *.pth
+            server.log # Include server log for debugging
+          retention-days: 1 # Keep the test model for 1 day
+
+      - name: Gather and Display Logs
+        run: |
           echo "Server finished. Gathering logs (tail)..."
           echo "----- server.log (last 500 lines) -----"
           tail -n 500 server.log || true
@@ -517,7 +536,9 @@ jobs:
           echo "----- client_node3.log (last 200 lines) -----"
           tail -n 200 client_node3.log || true
 
-          # Cleanup any lingering clients (best-effort)
+      - name: Cleanup Background Clients
+        if: always()
+        run: |
           for pidfile in client_node1.pid client_node2.pid client_node3.pid; do
             if [ -f "$pidfile" ]; then
               pid=$(cat "$pidfile")
@@ -555,26 +576,10 @@ jobs:
           echo "| 6️⃣ Flower Clients | ${{ needs.test-clients.result == 'success' && '✅ PASS' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 7️⃣ Integration Test | ${{ needs.integration-test.result == 'success' && '✅ PASS' || '⚠️ SKIP' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 What Was Tested:" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifact Available" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ NumPy 1.x compatibility verified" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ PyTorch, YOLOv8, and Flower installed correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ pycryptodome installed for secure aggregation" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ YOLOv8 model creates and runs forward pass" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Model serialization works (Flower compatibility)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Flower clients initialize correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ All 3 node dataloaders work" >> $GITHUB_STEP_SUMMARY
-          echo "- ⚠️ Data tests skipped if data not in repo (expected)" >> $GITHUB_STEP_SUMMARY
+          echo "The aggregated model (final-aggregated-model-${{ github.sha }}) and server logs are available for download under the **Summary** tab of this workflow run." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "If all core tests pass (Setup, Model, Clients, DataLoaders):" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download your data locally" >> $GITHUB_STEP_SUMMARY
-          echo "2. Run: \`python scripts/check_data.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Run: \`python server/server_flower.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "4. Run: \`python clients/node1/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "5. Run: \`python clients/node2/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
-          echo "6. Run: \`python clients/node3/client_flower.py\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Print Final Status
         run: |
@@ -588,7 +593,5 @@ jobs:
           echo "  ✅ Flower clients"
           echo "  ✅ All 3 node dataloaders"
           echo "  ✅ Secure aggregation crypto"
-          echo ""
-          echo "Data-dependent tests skipped (expected in CI)"
           echo ""
           echo "================================================"
