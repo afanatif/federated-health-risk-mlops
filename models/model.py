@@ -1,237 +1,215 @@
-# model.py
 """
-Advanced image classifier for binary pothole detection.
+YOLOv8 Model for Pothole Detection (Object Detection)
+
+This uses YOLOv8 nano model for federated learning.
+Predicts bounding boxes around potholes.
 
 Features:
-- Pretrained ResNet50 backbone (configurable)
-- Squeeze-and-Excitation (SE) attention block
-- Strong classifier head with dropout and optional MC Dropout
-- Utilities to convert model.state_dict() <-> list[numpy.ndarray] (useful for Flower)
-- Save / load helpers
-
-Usage:
-    from model import get_model, model_to_ndarrays, ndarrays_to_model, save_model, load_model
-    model = get_model(backbone="resnet50", pretrained=True, dropout=0.5)
-
-Notes:
-- If you train with BCEWithLogitsLoss prefer the model without final Sigmoid.
-- Downloading pretrained weights requires internet on first run.
+- YOLOv8n (lightweight, fast)
+- Compatible with YOLO label format
+- Utilities for Flower federated learning
 """
 
-from typing import List, Optional
+from typing import List
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-import torchvision.models as models
+from ultralytics import YOLO
 
 
-class SEBlock(nn.Module):
-    """Squeeze-and-Excitation block."""
-    def __init__(self, channels: int, reduction: int = 16):
-        super().__init__()
-        self.fc1 = nn.Linear(channels, channels // reduction, bias=False)
-        self.fc2 = nn.Linear(channels // reduction, channels, bias=False)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, C, H, W)
-        b, c, _, _ = x.size()
-        se = torch.mean(x.view(b, c, -1), dim=2)  # global avg pool -> (B, C)
-        se = F.relu(self.fc1(se))
-        se = torch.sigmoid(self.fc2(se))
-        se = se.view(b, c, 1, 1)
-        return x * se
-
-
-class SpatialAttention(nn.Module):
-    """Simple spatial attention (conv on pooled channels)."""
-    def __init__(self, kernel_size: int = 7):
-        super().__init__()
-        padding = (kernel_size - 1) // 2
-        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=padding, bias=False)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # channel-wise pooling
-        max_pool, _ = torch.max(x, dim=1, keepdim=True)
-        avg_pool = torch.mean(x, dim=1, keepdim=True)
-        cat = torch.cat([max_pool, avg_pool], dim=1)
-        attn = self.sigmoid(self.conv(cat))
-        return x * attn
-
-
-class AdvancedResNetClassifier(nn.Module):
+class YOLOv8Wrapper(nn.Module):
     """
-    Advanced classifier using a ResNet backbone + SE + spatial attention.
-    Output: scalar in [0,1] (Sigmoid).
+    Wrapper around YOLOv8 for federated learning compatibility.
     """
-    def __init__(
-        self,
-        backbone: str = "resnet50",
-        pretrained: bool = True,
-        dropout: float = 0.5,
-        use_se: bool = True,
-        use_spatial_attn: bool = True,
-        mc_dropout: bool = False,
-    ):
-        super().__init__()
-        backbone = backbone.lower()
-        self.use_se = use_se
-        self.use_spatial_attn = use_spatial_attn
-        self.mc_dropout = mc_dropout
-
-        # Load backbone
-        if backbone == "resnet50":
-            self.backbone = models.resnet50(pretrained=pretrained)
-            num_feats = self.backbone.fc.in_features  # 2048
-        elif backbone == "resnet34":
-            self.backbone = models.resnet34(pretrained=pretrained)
-            num_feats = self.backbone.fc.in_features  # 512
-        elif backbone == "resnet18":
-            self.backbone = models.resnet18(pretrained=pretrained)
-            num_feats = self.backbone.fc.in_features  # 512
-        else:
-            raise ValueError(f"Unsupported backbone: {backbone}")
-
-        # Remove the original fc and avgpool to use our own pooling + attention
-        # Keep everything up to layer4 inclusive
-        self.backbone_fc_replaced = True
-        # Cut off final fc and avgpool
-        self.backbone.fc = nn.Identity()
-        # ResNet has avgpool already; we'll call backbone(x) -> feature map if necessary.
-        # To get the 2D feature map, we forward until layer4 using the original modules:
-        # but easiest is to use self.backbone and manually apply avgpool if needed.
-
-        # Attention blocks applied to final conv feature map (optional)
-        if self.use_se:
-            self.se = SEBlock(num_feats, reduction=16)
-        else:
-            self.se = nn.Identity()
-
-        if self.use_spatial_attn:
-            self.spatial_attn = SpatialAttention(kernel_size=7)
-        else:
-            self.spatial_attn = nn.Identity()
-
-        # Pooling and classifier head
-        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout = nn.Dropout(p=dropout)
-        # Optionally MC Dropout: dropout layers active during eval for uncertainty estimation
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(num_feats, 512),
-            nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Dropout(p=dropout),
-            nn.Linear(512, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Dropout(p=dropout),
-            nn.Linear(128, 1),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def __init__(self, model_size='n', num_classes=1, pretrained=True):
         """
-        Forward pass.
-        Input: x (B, 3, H, W), expected normalized as ImageNet (mean/std).
-        Output: (B, 1) probability.
+        Args:
+            model_size: 'n', 's', 'm', 'l', 'x' (nano to extra-large)
+            num_classes: Number of classes (1 for pothole detection)
+            pretrained: Use pretrained COCO weights
         """
-        # Use resnet stem + layers to get final conv feature map
-        # Emulate forward until last conv feature map (before avgpool)
-        # Reference: torchvision resnet forward: conv1->bn1->relu->maxpool->layer1->layer2->layer3->layer4->avgpool->fc
-        x = self.backbone.conv1(x)
-        x = self.backbone.bn1(x)
-        x = self.backbone.relu(x)
-        x = self.backbone.maxpool(x)
-        x = self.backbone.layer1(x)
-        x = self.backbone.layer2(x)
-        x = self.backbone.layer3(x)
-        x = self.backbone.layer4(x)  # final conv feature map, shape (B, C, Hf, Wf)
+        super().__init__()
+        
+        # Load YOLOv8 model
+        if pretrained:
+            # Load pretrained model and modify for our classes
+            self.model = YOLO(f'yolov8{model_size}.pt')
+        else:
+            # Load architecture only
+            self.model = YOLO(f'yolov8{model_size}.yaml')
+        
+        # Override number of classes if needed
+        self.model.model.nc = num_classes  # Set number of classes
+        self.num_classes = num_classes
+        
+    def forward(self, x):
+        """
+        Forward pass through YOLOv8.
+        
+        Args:
+            x: Input images (B, 3, H, W)
+            
+        Returns:
+            predictions during training, detections during inference
+        """
+        return self.model.model(x)
+    
+    def predict(self, x, conf=0.25, iou=0.45):
+        """
+        Run inference with post-processing.
+        
+        Args:
+            x: Input images
+            conf: Confidence threshold
+            iou: IoU threshold for NMS
+            
+        Returns:
+            List of detections per image
+        """
+        return self.model.predict(x, conf=conf, iou=iou, verbose=False)
 
-        # Attention on feature map
-        if self.use_se:
-            x = self.se(x)
-        if self.use_spatial_attn:
-            x = self.spatial_attn(x)
 
-        # Global pooling + classifier
-        x = self.global_pool(x)  # (B, C, 1, 1)
-        x = self.classifier(x)  # (B, 1) after flatten + final sigmoid
-        return x
-
-    def enable_mc_dropout(self):
-        """Enable dropout at eval time (for MC Dropout)."""
-        self.mc_dropout = True
-        self.train()  # ensure dropout layers are in train mode while still using eval for BN if needed
-
-    def disable_mc_dropout(self):
-        """Disable MC dropout and use normal eval mode."""
-        self.mc_dropout = False
-        self.eval()
-
-
-# -----------------------
-# Helper functions
-# -----------------------
-def get_model(
-    backbone: str = "resnet50",
-    pretrained: bool = True,
-    dropout: float = 0.5,
-    use_se: bool = True,
-    use_spatial_attn: bool = True,
-    mc_dropout: bool = False,
-) -> nn.Module:
+def get_model(model_size='n', num_classes=1, pretrained=True, img_size=640):
     """
-    Create the model.
-
+    Create YOLOv8 model for federated learning.
+    
+    Args:
+        model_size: 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (xlarge)
+        num_classes: Number of object classes (1 for pothole)
+        pretrained: Use COCO pretrained weights
+        img_size: Input image size (default 640)
+        
     Returns:
-        model (nn.Module)
+        model: YOLOv8 model
     """
-    model = AdvancedResNetClassifier(
-        backbone=backbone,
-        pretrained=pretrained,
-        dropout=dropout,
-        use_se=use_se,
-        use_spatial_attn=use_spatial_attn,
-        mc_dropout=mc_dropout,
+    model = YOLOv8Wrapper(
+        model_size=model_size,
+        num_classes=num_classes,
+        pretrained=pretrained
     )
+    
+    # Set image size
+    model.model.args['imgsz'] = img_size
+    
     return model
 
 
-def model_to_ndarrays(model: nn.Module) -> List[np.ndarray]:
+def model_to_ndarrays(model):
     """
-    Convert model.state_dict() to list of numpy arrays for Flower (or any aggregator).
-    Order matches state_dict().values().
+    Convert YOLOv8 model parameters to numpy arrays for Flower.
+    
+    Args:
+        model: YOLOv8Wrapper model
+        
+    Returns:
+        List of numpy arrays
     """
-    return [val.cpu().numpy() for val in model.state_dict().values()]
+    # Get state dict from the underlying YOLO model
+    state_dict = model.model.model.state_dict()
+    return [val.cpu().numpy() for val in state_dict.values()]
 
 
-def ndarrays_to_model(model: nn.Module, arrays: List[np.ndarray]) -> None:
+def ndarrays_to_model(model, arrays):
     """
-    Load list of numpy arrays into model.state_dict() (in-place).
-    arrays must be in same order as model.state_dict().values().
+    Load numpy arrays into YOLOv8 model (for Flower).
+    
+    Args:
+        model: YOLOv8Wrapper model
+        arrays: List of numpy arrays
     """
-    keys = list(model.state_dict().keys())
+    state_dict = model.model.model.state_dict()
+    keys = list(state_dict.keys())
+    
     if len(keys) != len(arrays):
         raise ValueError(f"Length mismatch: {len(keys)} keys vs {len(arrays)} arrays")
-    state_dict = {}
+    
+    # Convert arrays back to tensors
+    new_state_dict = {}
     for k, arr in zip(keys, arrays):
-        state_dict[k] = torch.tensor(arr)
-    model.load_state_dict(state_dict, strict=True)
+        new_state_dict[k] = torch.tensor(arr)
+    
+    # Load into model
+    model.model.model.load_state_dict(new_state_dict, strict=True)
 
 
-def save_model(model: nn.Module, path: str) -> None:
+def save_model(model, path):
     """
-    Save PyTorch state_dict to path.
+    Save YOLOv8 model.
+    
+    Args:
+        model: YOLOv8Wrapper model
+        path: Save path (.pt file)
     """
-    torch.save(model.state_dict(), path)
+    model.model.save(path)
 
 
-def load_model(model: nn.Module, path: str, map_location: Optional[str] = None) -> None:
+def load_model(model, path):
     """
-    Load state_dict into model.
+    Load YOLOv8 model weights.
+    
+    Args:
+        model: YOLOv8Wrapper model
+        path: Path to .pt file
     """
-    map_loc = None if map_location is None else map_location
-    sd = torch.load(path, map_location=map_loc)
-    model.load_state_dict(sd)
+    model.model = YOLO(path)
+
+
+# ============================================
+# YOLO LOSS FUNCTION
+# ============================================
+
+class YOLOLoss:
+    """
+    Wrapper for YOLOv8 loss computation.
+    Uses YOLOv8's built-in loss calculation.
+    """
+    def __init__(self, model):
+        """
+        Args:
+            model: YOLOv8Wrapper model
+        """
+        self.model = model.model.model
+        
+    def __call__(self, predictions, targets):
+        """
+        Compute YOLO loss.
+        
+        Args:
+            predictions: Model predictions
+            targets: Ground truth labels (YOLO format)
+            
+        Returns:
+            loss: Total loss (box + class + objectness)
+        """
+        # YOLOv8 computes loss internally during training
+        # This is handled by the ultralytics trainer
+        return self.model.loss(predictions, targets)
+
+
+# ============================================
+# EXAMPLE USAGE
+# ============================================
+
+if __name__ == "__main__":
+    # Create model
+    model = get_model(model_size='n', num_classes=1, pretrained=False)
+    
+    print("✅ YOLOv8 Model Created")
+    print(f"   Model type: YOLOv8-nano")
+    print(f"   Number of classes: 1 (pothole)")
+    print(f"   Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    
+    # Test forward pass
+    dummy_input = torch.randn(2, 3, 640, 640)  # Batch of 2 images
+    output = model(dummy_input)
+    print(f"\n✅ Forward pass successful")
+    print(f"   Input shape: {dummy_input.shape}")
+    print(f"   Output type: {type(output)}")
+    
+    # Test conversion to numpy arrays
+    arrays = model_to_ndarrays(model)
+    print(f"\n✅ Model to numpy arrays: {len(arrays)} arrays")
+    
+    # Test loading from numpy arrays
+    ndarrays_to_model(model, arrays)
+    print(f"✅ Numpy arrays to model: Success")
