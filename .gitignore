@@ -2,5 +2,22 @@ __pycache__/
 *.pyc
 *.pt
 *.h5
-/data/*
+# /data/*
 !.gitkeep
+
+
+
+
+
+# Ignore editor configs
+.vscode/
+
+# Ignore YOLO training outputs
+runs/
+
+# Ignore datasets
+data/Pothole.v1i.yolov8/
+federated_training/clients/*/data/
+
+# Ignore temp Jupyter
+*.ipynb_checkpoints/
