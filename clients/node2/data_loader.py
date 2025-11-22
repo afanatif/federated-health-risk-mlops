@@ -1,91 +1,58 @@
+
+# ============================================
+# clients/node2/data_loader.py - Node 2
+# ============================================
+
 """
-Data loader for node2.
-Updated to load from: data/federated/splits/iid_5nodes/node_2/
+Data loader for Node 2 - YOLO Object Detection
 """
+
 import os
 import torch
 from torch.utils.data import DataLoader, random_split
-from clients.common.image_dataset import ImagePotholeDataset
+from clients.common.image_dataset import YOLODataset
 
 
-def get_loaders(images_dir=None, labels_dir=None, batch_size=16, val_frac=0.1, seed=42):
-    """
-    Create train and validation data loaders.
+def get_loaders(batch_size=8, img_size=640, val_split=0.2):
+    """Get train and validation loaders for Node 2."""
     
-    Args:
-        images_dir: Path to images directory, or None for auto-detect
-        labels_dir: Path to labels directory or None
-        batch_size: Batch size for loaders
-        val_frac: Fraction of data to use for validation
-        seed: Random seed for reproducible splits
+    data_root = os.path.join("data", "federated", "splits", "iid_5nodes", "node_2")
+    images_dir = os.path.join(data_root, "images")
+    labels_dir = os.path.join(data_root, "labels")
     
-    Returns:
-        tuple: (train_loader, val_loader)
-    """
+    if not os.path.exists(images_dir):
+        raise FileNotFoundError(f"Images directory not found: {images_dir}")
+    if not os.path.exists(labels_dir):
+        raise FileNotFoundError(f"Labels directory not found: {labels_dir}")
     
-    # Auto-detect paths if not provided
-    if images_dir is None:
-        # NEW PATH: data/federated/splits/iid_5nodes/node_2/
-        images_dir = "data/federated/splits/iid_5nodes/node_2/images"
-        labels_dir = "data/federated/splits/iid_5nodes/node_2/labels"
-    else:
-        # If only images_dir provided, try to find labels
-        if labels_dir is None:
-            parent = os.path.dirname(images_dir)
-            labels_dir = os.path.join(parent, "labels")
+    full_dataset = YOLODataset(images_dir=images_dir, labels_dir=labels_dir, img_size=img_size)
     
-    print(f"[Node2 DataLoader] Loading data from:")
-    print(f"  Images: {images_dir}")
-    print(f"  Labels: {labels_dir}")
+    total_size = len(full_dataset)
+    val_size = int(total_size * val_split)
+    train_size = total_size - val_size
     
-    # Verify directories exist
-    if not os.path.isdir(images_dir):
-        raise FileNotFoundError(f"Images dir not found: {images_dir}")
-    if not os.path.isdir(labels_dir):
-        raise FileNotFoundError(f"Labels dir not found: {labels_dir}")
+    train_dataset, val_dataset = random_split(
+        full_dataset, [train_size, val_size], generator=torch.Generator().manual_seed(42)
+    )
     
-    # Create dataset
-    ds = ImagePotholeDataset(images_dir, labels_dir)
-    total = len(ds)
+    print(f"📊 Node 2: Train={train_size}, Val={val_size}")
     
-    if total == 0:
-        raise ValueError(f"Dataset is empty! Check {images_dir} and {labels_dir}")
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True,
+        collate_fn=full_dataset.collate_fn, num_workers=0, drop_last=True
+    )
     
-    print(f"[Node2 DataLoader] Total samples: {total}")
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False,
+        collate_fn=full_dataset.collate_fn, num_workers=0, drop_last=False
+    )
     
-    # Split into train and validation
-    val_count = max(1, int(total * val_frac))
-    train_count = total - val_count
-    
-    # Create generator for reproducible splits
-    generator = torch.Generator().manual_seed(seed)
-    
-    if train_count <= 0:
-        print("[Node2 DataLoader] Warning: Dataset too small, using all for train and val")
-        train_ds = ds
-        val_ds = ds
-    else:
-        train_ds, val_ds = random_split(ds, [train_count, val_count], generator=generator)
-    
-    print(f"[Node2 DataLoader] Train: {len(train_ds)}, Val: {len(val_ds)}")
-    
-    # Create loaders
-    # drop_last=True prevents BatchNorm errors when last batch has size 1
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=False)
-    
-    print("[Node2 DataLoader] ✓ Loaders created successfully")
+    print(f"✅ Node 2: {len(train_loader)} train batches, {len(val_loader)} val batches")
     
     return train_loader, val_loader
 
 
-# Test if run directly
 if __name__ == "__main__":
-    print("Testing node2 data_loader...")
-    try:
-        train_loader, val_loader = get_loaders()
-        print(f"✓ Success! Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-    except Exception as e:
-        print(f"✗ Failed: {e}")
-        import traceback
-        traceback.print_exc()
+    train_loader, val_loader = get_loaders(batch_size=4)
+    images, targets = next(iter(train_loader))
+    print(f"✅ Node 2 test: Images {images.shape}, Targets {len(targets)}")
