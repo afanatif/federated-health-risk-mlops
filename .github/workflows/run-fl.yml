@@ -237,35 +237,52 @@ jobs:
           print('✅ Model utilities imported successfully')
           "
 
-      - name: ✅ Test model creation
+      - name: ✅ Test model creation 
         run: |
           python -c "
           import torch
           from models.model import get_model
           
-          print('🔧 Creating YOLOv8 model...')
-          model = get_model(model_size='n', num_classes=7, pretrained=False, use_yolo_direct=True)
-          print(f'✅ Model created')
+          print('🔧 Creating YOLOv8 model with pretrained weights...')
+          # Only test with pretrained=True (matches production usage)
+          model = get_model(model_size='n', num_classes=7, pretrained=True, use_yolo_direct=True)
+          print(f'✅ Model created successfully')
           print(f'✅ Parameters: {sum(p.numel() for p in model.model.model.parameters()):,}')
+          
+          # Check model structure
+          detect = model.model.model[-1]
+          if hasattr(detect, 'nc'):
+            print(f'✅ Detect head classes: {detect.nc}')
           "
 
-      - name: ✅ Test model forward pass
+      - name: ✅ Test model forward pass 
         run: |
           python -c "
           import torch
           from models.model import get_model
           
-          model = get_model(model_size='n', num_classes=7, pretrained=False, use_yolo_direct=True)
+          print('🔧 Creating YOLOv8 model with pretrained weights...')
+          # Use pretrained=True to get a properly initialized model
+          model = get_model(model_size='n', num_classes=7, pretrained=True, use_yolo_direct=True)
           model.model.model.eval()
           
           dummy_input = torch.randn(2, 3, 640, 640)
           print(f'📥 Input shape: {dummy_input.shape}')
           
-          with torch.no_grad():
-            output = model.model.model(dummy_input)
-          
-          print(f'✅ Forward pass successful')
-          print(f'✅ Output type: {type(output)}')
+          try:
+            with torch.no_grad():
+              output = model.model.model(dummy_input)
+            print(f'✅ Forward pass successful')
+            print(f'✅ Output type: {type(output)}')
+            if isinstance(output, (list, tuple)):
+              print(f'✅ Output length: {len(output)}')
+              if len(output) > 0:
+                print(f'✅ First output shape: {output[0].shape if hasattr(output[0], \"shape\") else type(output[0])}')
+          except Exception as e:
+            import traceback
+            print('❌ Forward pass failed:')
+            traceback.print_exc()
+            raise e
           "
 
       - name: ✅ Test model serialization (Flower compatibility)
@@ -274,7 +291,8 @@ jobs:
           import torch
           from models.model import get_model, model_to_ndarrays, ndarrays_to_model
           
-          model = get_model(model_size='n', num_classes=7, pretrained=False, use_yolo_direct=True)
+          # Use pretrained=True (matches production usage)
+          model = get_model(model_size='n', num_classes=7, pretrained=True, use_yolo_direct=True)
           
           arrays = model_to_ndarrays(model)
           print(f'✅ Model to arrays: {len(arrays)} arrays')
@@ -314,10 +332,14 @@ jobs:
           
           from clients.common.client_flower import setup_client_logging, YOLOFLClient
           from clients.common.config import get_pretrained_model_path
-          from models.model import model_to_ndarrays
+          from models.model import get_model, model_to_ndarrays
           import flwr as fl
           
           print('✅ All client imports successful')
+          
+          # Test that we can create a model (pretrained only)
+          model = get_model(model_size='n', num_classes=7, pretrained=True, use_yolo_direct=True)
+          print('✅ Model creation successful')
           print('✅ Clients can be initialized (when data is available)')
           "
 
