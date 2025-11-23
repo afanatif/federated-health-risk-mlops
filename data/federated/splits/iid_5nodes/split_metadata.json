@@ -1,76 +1,76 @@
 {
   "strategy": "iid",
   "num_nodes": 5,
-  "random_seed": 42,
+  "seed": 42,
   "total_images": 1429,
   "total_annotations": 3162,
   "nodes": {
-    "0": {
-      "num_images": 285,
-      "num_annotations": 606,
-      "class_distribution": {
-        "banner": 12,
-        "erosion": 39,
-        "hcrack": 38,
-        "pothole": 6,
-        "stone": 3,
-        "trash": 3,
-        "vcrack": 152
-      },
-      "unique_classes": 7
-    },
     "1": {
       "num_images": 285,
-      "num_annotations": 659,
+      "num_annotations": 622,
       "class_distribution": {
-        "banner": 16,
-        "erosion": 45,
-        "hcrack": 41,
-        "pothole": 9,
-        "trash": 3,
-        "vcrack": 157
+        "banner": 29,
+        "erosion": 54,
+        "hcrack": 71,
+        "pothole": 5,
+        "trash": 6,
+        "vcrack": 457
       },
       "unique_classes": 6
     },
     "2": {
       "num_images": 285,
-      "num_annotations": 676,
+      "num_annotations": 595,
       "class_distribution": {
-        "banner": 11,
-        "erosion": 41,
-        "hcrack": 38,
-        "pothole": 7,
-        "stone": 3,
-        "trash": 6,
-        "vcrack": 174
+        "banner": 37,
+        "erosion": 54,
+        "hcrack": 64,
+        "pothole": 13,
+        "stone": 7,
+        "trash": 5,
+        "vcrack": 415
       },
       "unique_classes": 7
     },
     "3": {
       "num_images": 285,
-      "num_annotations": 632,
+      "num_annotations": 647,
       "class_distribution": {
-        "banner": 9,
-        "erosion": 34,
-        "hcrack": 36,
-        "pothole": 6,
-        "stone": 8,
-        "trash": 4,
-        "vcrack": 172
+        "banner": 34,
+        "erosion": 89,
+        "hcrack": 64,
+        "pothole": 10,
+        "stone": 16,
+        "trash": 3,
+        "vcrack": 431
       },
       "unique_classes": 7
     },
     "4": {
-      "num_images": 289,
-      "num_annotations": 589,
+      "num_images": 285,
+      "num_annotations": 727,
       "class_distribution": {
-        "banner": 9,
-        "erosion": 48,
-        "hcrack": 30,
-        "pothole": 7,
-        "stone": 3,
+        "banner": 88,
+        "erosion": 84,
+        "hcrack": 52,
+        "pothole": 12,
+        "stone": 5,
         "trash": 2,
-        "vcrack": 163
+        "vcrack": 484
+      },
+      "unique_classes": 7
+    },
+    "5": {
+      "num_images": 289,
+      "num_annotations": 571,
+      "class_distribution": {
+        "banner": 41,
+        "erosion": 67,
+        "hcrack": 63,
+        "pothole": 8,
+        "stone": 9,
+        "trash": 3,
+        "vcrack": 380
       },
       "unique_classes": 7
     }

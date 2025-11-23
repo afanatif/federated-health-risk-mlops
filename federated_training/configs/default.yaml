@@ -1,0 +1,29 @@
+# Default FL experiment settings
+federated:
+  server:
+    host: "0.0.0.0"
+    port: 8080
+    rounds: 5
+    min_clients: 3
+    fraction_fit: 1.0
+    strategy: "FedAvg"
+
+  client:
+    epochs_per_round: 1
+    batch_size: 4            # Will auto-adjust based on GPU memory
+    img_size: 640
+    seed: 42
+
+paths:
+  data_root: "data/federated"
+  checkpoints: "../server/checkpoints"
+  logs: "../../logs/federated"
+
+runtime:
+  device: "auto"             # auto-detect CPU/GPU
+  max_batch_per_device: 16   # maximum batch per GPU memory
+
+models:
+  root: "models"
+  default_model: "yolov8n.pt"
+

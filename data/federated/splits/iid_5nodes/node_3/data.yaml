@@ -1,12 +1,12 @@
-# YOLOv8 Dataset Configuration for Node 3
-# Federated Learning - Road Damage Detection
-
-path: federated_base/splits/iid_5nodes/node_3
-train: images
-val: ../base_valid/images  # Shared validation set
-
+names:
+- banner
+- erosion
+- hcrack
+- pothole
+- stone
+- trash
+- vcrack
 nc: 7
-names: ['banner', 'erosion', 'hcrack', 'pothole', 'stone', 'trash', 'vcrack']
-
-# Node ID: 3
-# This is a federated learning node dataset
+path: /home/dell/Assign/MLOPs/Merge/federated-health-risk-mlops-omer/data/federated/splits/iid_5nodes/node_3
+train: images
+val: /home/dell/Assign/MLOPs/Merge/federated-health-risk-mlops-omer/data/Pothole.v1i.yolov8/valid/images

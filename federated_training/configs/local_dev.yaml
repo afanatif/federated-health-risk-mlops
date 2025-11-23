@@ -1,0 +1,14 @@
+# Overrides for local development/testing
+federated:
+  server:
+    port: 8081
+    rounds: 2
+    min_clients: 2
+  client:
+    batch_size: 4            # Base batch size for GPU/CPU auto-scaling
+    epochs_per_round: 1
+    img_size: 640
+
+runtime:
+  device: "auto"             # Auto-detect GPU, fallback to CPU
+  max_batch_per_device: 16   # Cap batch size for GPU memory
