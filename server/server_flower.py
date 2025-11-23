@@ -8,13 +8,38 @@ import sys
 import argparse
 import logging
 from typing import List, Tuple, Dict, Optional
+from datetime import datetime
 
 # Add project root to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
 
-print(f"Project Root: {project_root}")
+# Configure professional logging
+def setup_logging(log_level=logging.INFO, log_file=None):
+    """Setup professional logging configuration"""
+    log_format = '%(asctime)s | %(levelname)-8s | %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    
+    handlers = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        handlers.append(logging.FileHandler(log_file))
+    
+    logging.basicConfig(
+        level=log_level,
+        format=log_format,
+        datefmt=date_format,
+        handlers=handlers
+    )
+    
+    # Suppress verbose third-party logs
+    logging.getLogger('flwr').setLevel(logging.WARNING)
+    logging.getLogger('ultralytics').setLevel(logging.WARNING)
+
+# Setup logging (will be reconfigured in main with file option)
+setup_logging()
+logger = logging.getLogger(__name__)
 
 import flwr as fl
 from flwr.common import Metrics, ndarrays_to_parameters, parameters_to_ndarrays
@@ -23,8 +48,9 @@ from flwr.common import Metrics, ndarrays_to_parameters, parameters_to_ndarrays
 try:
     from models.model import get_model, model_to_ndarrays, ndarrays_to_model, save_model
     MODEL_UTILS_AVAILABLE = True
+    logger.debug("Model utilities imported successfully")
 except ImportError as e:
-    print(f"⚠️  Could not import model utilities: {e}")
+    logger.error(f"Could not import model utilities: {e}")
     MODEL_UTILS_AVAILABLE = False
 
 
@@ -81,7 +107,7 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
     """Custom FedAvg strategy with detailed logging and robust error handling"""
     
     def __init__(self, checkpoint_dir: str = "server/checkpoints", 
-                 model_size: str = "n", num_classes: int = 1, *args, **kwargs):
+                 model_size: str = "n", num_classes: int = 7, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.checkpoint_dir = checkpoint_dir
         self.model_size = model_size
@@ -94,80 +120,80 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
         """Aggregate training results and save checkpoint"""
         self.round_num = server_round
         
-        print(f"\n{'='*80}")
-        print(f"{'ROUND ' + str(server_round) + ' - TRAINING AGGREGATION':^80}")
-        print(f"{'='*80}")
+        logger.info("="*80)
+        logger.info(f"ROUND {server_round} - TRAINING AGGREGATION")
+        logger.info("="*80)
         
-        # Show failures
+        # Log failures
         if failures:
-            print(f"\n⚠️  {len(failures)} clients failed:")
+            logger.warning(f"{len(failures)} client(s) failed in round {server_round}")
             for failure in failures:
-                print(f"   {failure}")
+                logger.warning(f"Client failure: {failure}")
         
-        # Show successful results
+        # Log successful results
         if results:
-            print(f"\n📊 Training Results from {len(results)} Clients:")
-            print("-"*80)
-            print(f"{'Client':<15} {'Samples':<15} {'Params':<15} {'Metrics':<35}")
-            print("-"*80)
+            logger.info(f"Received training results from {len(results)} client(s)")
             
+            total_samples = 0
             for idx, (client, fit_res) in enumerate(results, 1):
                 num_samples = fit_res.num_examples
                 metrics = fit_res.metrics
                 param_count = len(parameters_to_ndarrays(fit_res.parameters))
+                total_samples += num_samples
                 
                 # Verify parameter count consistency
                 if self.expected_param_count is None:
                     self.expected_param_count = param_count
-                    print(f"📌 Set expected parameter count: {param_count}")
+                    logger.info(f"Initialized expected parameter count: {param_count}")
                 elif param_count != self.expected_param_count:
-                    print(f"\n🚨 WARNING: Client {idx} parameter count mismatch!")
-                    print(f"   Expected: {self.expected_param_count}, Got: {param_count}")
-                    print(f"   This indicates model architecture inconsistency!")
+                    logger.error(
+                        f"Parameter count mismatch for client {idx}: "
+                        f"expected={self.expected_param_count}, received={param_count}"
+                    )
                 
-                # Format metrics safely
+                # Log client metrics
                 if metrics:
                     numeric_metrics = {k: v for k, v in metrics.items() 
                                      if k != 'error' and isinstance(v, (int, float))}
-                    metrics_str = str(numeric_metrics)[:32] + "..." if len(str(numeric_metrics)) > 35 else str(numeric_metrics)
+                    logger.info(
+                        f"Client {idx}: samples={num_samples}, "
+                        f"params={param_count}, metrics={numeric_metrics}"
+                    )
                 else:
-                    metrics_str = "No metrics"
-                
-                print(f"Client {idx:<8} {num_samples:<15} {param_count:<15} {metrics_str:<35}")
+                    logger.info(f"Client {idx}: samples={num_samples}, params={param_count}")
             
-            print("-"*80)
-            total_samples = sum(fit_res.num_examples for _, fit_res in results)
-            print(f"{'TOTAL':<15} {total_samples:<15}")
+            logger.info(f"Total samples across all clients: {total_samples}")
         else:
-            print(f"\n❌ No successful training results!")
+            logger.error("No successful training results received")
             return None
         
         # Perform FedAvg
-        print(f"\n🔄 Performing Federated Averaging...")
+        logger.info("Performing Federated Averaging (FedAvg)")
         try:
             agg_result = super().aggregate_fit(server_round, results, failures)
             
             if agg_result is None:
-                print(f"❌ Aggregation failed - no results to aggregate")
+                logger.error("Aggregation failed - no results to aggregate")
                 return None
 
             parameters, metrics = agg_result
             
             # Verify aggregated parameters
             agg_param_count = len(parameters_to_ndarrays(parameters))
-            print(f"✅ Aggregation complete")
-            print(f"   Aggregated parameter arrays: {agg_param_count}")
+            logger.info(f"Aggregation complete: {agg_param_count} parameter arrays")
             
             if self.expected_param_count and agg_param_count != self.expected_param_count:
-                print(f"🚨 CRITICAL: Aggregated param count ({agg_param_count}) != expected ({self.expected_param_count})")
-                print(f"   This indicates parameter loss during aggregation!")
+                logger.error(
+                    f"Parameter count mismatch after aggregation: "
+                    f"expected={self.expected_param_count}, got={agg_param_count}"
+                )
             
-            # Show aggregated metrics
+            # Log aggregated metrics
             if metrics:
-                print(f"\n📊 Aggregated Metrics:")
+                logger.info("Aggregated metrics:")
                 for key, val in metrics.items():
                     if isinstance(val, (int, float)):
-                        print(f"   {key}: {val:.6f}")
+                        logger.info(f"  {key}: {val:.6f}")
             
             # Save checkpoint
             self._save_checkpoint(server_round, parameters)
@@ -175,30 +201,25 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
             return parameters, metrics
             
         except Exception as e:
-            print(f"❌ Aggregation error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Aggregation error: {e}")
             return None
     
     def aggregate_evaluate(self, server_round, results, failures):
         """Aggregate evaluation results"""
-        print(f"\n{'='*80}")
-        print(f"{'ROUND ' + str(server_round) + ' - EVALUATION AGGREGATION':^80}")
-        print(f"{'='*80}")
+        logger.info("="*80)
+        logger.info(f"ROUND {server_round} - EVALUATION AGGREGATION")
+        logger.info("="*80)
         
         if failures:
-            print(f"\n⚠️  {len(failures)} clients failed evaluation")
+            logger.warning(f"{len(failures)} client(s) failed evaluation")
         
         if not results:
-            print(f"❌ No evaluation results")
+            logger.error("No evaluation results received")
             return None
         
-        # Show evaluation results
-        print(f"\n🎯 Evaluation Results from {len(results)} Clients:")
-        print("-"*80)
-        print(f"{'Client':<15} {'Samples':<15} {'Loss':<15} {'Metrics':<30}")
-        print("-"*80)
+        logger.info(f"Received evaluation results from {len(results)} client(s)")
         
+        # Log evaluation results
         for idx, (client, eval_res) in enumerate(results, 1):
             num_samples = eval_res.num_examples
             loss = eval_res.loss
@@ -207,13 +228,12 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
             if metrics:
                 numeric_metrics = {k: v for k, v in metrics.items() 
                                  if isinstance(v, (int, float))}
-                metrics_str = str(numeric_metrics)[:27] + "..." if len(str(numeric_metrics)) > 30 else str(numeric_metrics)
+                logger.info(
+                    f"Client {idx}: samples={num_samples}, loss={loss:.6f}, "
+                    f"metrics={numeric_metrics}"
+                )
             else:
-                metrics_str = "No metrics"
-            
-            print(f"Client {idx:<8} {num_samples:<15} {loss:<15.6f} {metrics_str:<30}")
-        
-        print("-"*80)
+                logger.info(f"Client {idx}: samples={num_samples}, loss={loss:.6f}")
         
         # Perform aggregation
         try:
@@ -221,60 +241,50 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
             
             if agg_result:
                 agg_loss, agg_metrics = agg_result
-                print(f"\n📊 Federated Average:")
-                print(f"   Loss: {agg_loss:.6f}")
+                logger.info(f"Federated average loss: {agg_loss:.6f}")
                 if agg_metrics:
+                    logger.info("Federated average metrics:")
                     for key, val in agg_metrics.items():
                         if isinstance(val, (int, float)):
-                            print(f"   {key}: {val:.6f}")
+                            logger.info(f"  {key}: {val:.6f}")
             
-            print("="*80)
             return agg_result
             
         except Exception as e:
-            print(f"❌ Evaluation aggregation error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Evaluation aggregation error: {e}")
             return None
     
     def _save_checkpoint(self, round_num, parameters):
         """Save model checkpoint (with error handling)"""
         if not MODEL_UTILS_AVAILABLE:
-            print(f"⚠️  Skipping checkpoint save (model utils not available)")
+            logger.warning("Skipping checkpoint save (model utils not available)")
             return
         
         try:
             ndarrays = parameters_to_ndarrays(parameters)
             
-            print(f"\n💾 Saving checkpoint for round {round_num}...")
+            logger.info(f"Saving checkpoint for round {round_num}")
             
             # CRITICAL FIX: Use SAME model config as clients!
-            print(f"   Creating model with: model_size='{self.model_size}', num_classes={self.num_classes}")
-            model = get_model(model_size=self.model_size, num_classes=self.num_classes, pretrained=False)
+            logger.debug(f"Creating model: size={self.model_size}, classes={self.num_classes}")
+            model = get_model(model_size=self.model_size, num_classes=self.num_classes, pretrained=True)
             
             # Count expected parameters from fresh model
             expected_arrays = len(model_to_ndarrays(model))
             trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
             
-            print(f"   Model created:")
-            print(f"     • Trainable parameters: {trainable_params:,}")
-            print(f"     • Expected parameter arrays: {expected_arrays}")
-            print(f"     • Received parameter arrays: {len(ndarrays)}")
+            logger.debug(
+                f"Model parameters: trainable={trainable_params:,}, "
+                f"expected_arrays={expected_arrays}, received_arrays={len(ndarrays)}"
+            )
             
             # Verify counts match
             if len(ndarrays) != expected_arrays:
-                print(f"\n🚨 CRITICAL ERROR: Parameter count mismatch!")
-                print(f"   Expected: {expected_arrays}, Got: {len(ndarrays)}")
-                print(f"   Cannot safely load parameters - SKIPPING CHECKPOINT SAVE")
-                print(f"   This indicates server and client models are different architectures!")
+                logger.error(
+                    f"Parameter count mismatch: expected={expected_arrays}, "
+                    f"got={len(ndarrays)}. Skipping checkpoint save."
+                )
                 return
-            
-            # Show shape comparison for first 5 arrays
-            print(f"\n   First 5 parameter shapes:")
-            model_arrays = model_to_ndarrays(model)
-            for i in range(min(5, len(ndarrays))):
-                match = "✓" if ndarrays[i].shape == model_arrays[i].shape else "✗"
-                print(f"     [{i}] Server: {model_arrays[i].shape}, Received: {ndarrays[i].shape} {match}")
             
             # Load parameters
             ndarrays_to_model(model, ndarrays)
@@ -282,19 +292,16 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
             # Save round checkpoint
             ckpt_path = os.path.join(self.checkpoint_dir, f"global_round_{round_num}.pt")
             save_model(model, ckpt_path)
-            print(f"   ✅ Saved: {ckpt_path}")
+            logger.info(f"Checkpoint saved: {ckpt_path}")
             
             # Save final model
             if hasattr(self, 'total_rounds') and round_num == self.total_rounds:
                 final_path = os.path.join(project_root, "global_final_model.pt")
                 save_model(model, final_path)
-                print(f"   🎉 Final model saved: {final_path}")
+                logger.info(f"Final model saved: {final_path}")
                 
         except Exception as e:
-            print(f"⚠️  Checkpoint save failed: {e}")
-            print(f"   This may indicate parameter shape mismatches")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Checkpoint save failed: {e}")
 
 
 def main():
@@ -304,53 +311,62 @@ def main():
     parser.add_argument("--min-clients", type=int, default=3, help="Minimum clients")
     parser.add_argument("--fraction-fit", type=float, default=1.0, help="Fraction of clients to fit")
     parser.add_argument("--model-size", type=str, default="n", help="Model size (n/s/m/l/x)")
-    parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
+    parser.add_argument("--num-classes", type=int, default=7, help="Number of classes")
+    parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Logging level")
+    parser.add_argument("--log-file", type=str, default=None, help="Log file path (optional)")
     args = parser.parse_args()
 
-    print("\n" + "="*80)
-    print("FEDERATED LEARNING SERVER - YOLOv8 POTHOLE DETECTION".center(80))
-    print("="*80)
-    print(f"\n📋 Configuration:")
-    print(f"   • Server Address: {args.addr}")
-    print(f"   • Training Rounds: {args.rounds}")
-    print(f"   • Minimum Clients: {args.min_clients}")
-    print(f"   • Fraction Fit: {args.fraction_fit}")
-    print(f"   • Model Size: YOLOv8{args.model_size}")
-    print(f"   • Number of Classes: {args.num_classes}")
-    print(f"   • Checkpoints: server/checkpoints/")
-    print("\n" + "="*80)
+    # Setup logging with file option
+    log_level = getattr(logging, args.log_level.upper())
+    log_file = args.log_file or os.path.join("server", "logs", f"server_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+    setup_logging(log_level=log_level, log_file=log_file)
+    
+    logger.info("="*80)
+    logger.info("FEDERATED LEARNING SERVER - YOLOv8 OBJECT DETECTION")
+    logger.info("="*80)
+    logger.info("Configuration:")
+    logger.info(f"  Server Address: {args.addr}")
+    logger.info(f"  Training Rounds: {args.rounds}")
+    logger.info(f"  Minimum Clients: {args.min_clients}")
+    logger.info(f"  Fraction Fit: {args.fraction_fit}")
+    logger.info(f"  Model Size: YOLOv8{args.model_size}")
+    logger.info(f"  Number of Classes: {args.num_classes}")
+    logger.info(f"  Checkpoint Directory: server/checkpoints/")
+    if args.log_file:
+        logger.info(f"  Log File: {log_file}")
+    logger.info("="*80)
 
     # Try to create initial parameters
     initial_parameters = None
     if MODEL_UTILS_AVAILABLE:
-        print("\n🤖 Initializing YOLOv8 Model...")
+        logger.info("Initializing YOLOv8 model")
         try:
             # CRITICAL FIX: Use command-line args for consistent configuration
-            model = get_model(model_size=args.model_size, num_classes=args.num_classes, pretrained=False)
+            model = get_model(model_size=args.model_size, num_classes=args.num_classes, pretrained=True)
             ndarrays = model_to_ndarrays(model)
             initial_parameters = ndarrays_to_parameters(ndarrays)
             
-            print(f"✅ Initial parameters created:")
-            print(f"   • Model: YOLOv8{args.model_size}")
-            print(f"   • Classes: {args.num_classes}")
-            print(f"   • Parameter arrays: {len(ndarrays)}")
-            print(f"   • Total weights: {sum(arr.size for arr in ndarrays):,}")
+            total_weights = sum(arr.size for arr in ndarrays)
+            logger.info(
+                f"Initial parameters created: model=YOLOv8{args.model_size}, "
+                f"classes={args.num_classes}, param_arrays={len(ndarrays)}, "
+                f"total_weights={total_weights:,}"
+            )
             
-            # Show first 5 parameter shapes for debugging
-            print(f"\n   First 5 parameter array shapes:")
+            # Log first 5 parameter shapes for debugging
+            logger.debug("First 5 parameter array shapes:")
             for i in range(min(5, len(ndarrays))):
-                print(f"     [{i}] {ndarrays[i].shape}")
+                logger.debug(f"  [{i}] {ndarrays[i].shape}")
             
         except Exception as e:
-            print(f"⚠️  Could not create initial parameters: {e}")
-            print(f"   Server will use client-initialized parameters")
-            import traceback
-            traceback.print_exc()
+            logger.warning(f"Could not create initial parameters: {e}")
+            logger.warning("Server will use client-initialized parameters")
+            logger.debug("", exc_info=True)
     else:
-        print(f"\n⚠️  Model utilities not available - server will use client weights")
+        logger.warning("Model utilities not available - server will use client weights")
 
     # Create strategy
-    print("\n🔧 Configuring Federated Learning Strategy...")
+    logger.info("Configuring Federated Learning Strategy (FedAvg)")
     strategy = DetailedFedAvg(
         checkpoint_dir="server/checkpoints",
         model_size=args.model_size,
@@ -366,26 +382,33 @@ def main():
     )
     
     strategy.total_rounds = args.rounds
-    print(f"✅ Strategy configured: FedAvg with weighted metrics")
+    logger.info("Strategy configured: FedAvg with weighted metrics aggregation")
 
-    print(f"\n🚀 Starting Flower Server...")
-    print(f"📡 Listening on: {args.addr}")
-    print(f"⏳ Waiting for {args.min_clients} clients to connect...")
-    print("="*80 + "\n")
+    logger.info("="*80)
+    logger.info("Starting Flower Server")
+    logger.info(f"Listening on: {args.addr}")
+    logger.info(f"Waiting for {args.min_clients} client(s) to connect...")
+    logger.info("="*80)
 
     # Start server
-    fl.server.start_server(
-        server_address=args.addr,
-        config=fl.server.ServerConfig(num_rounds=args.rounds),
-        strategy=strategy,
-    )
-    
-    print("\n" + "="*80)
-    print("🏁 FEDERATED TRAINING COMPLETE!")
-    print("="*80)
-    print(f"\n✅ All {args.rounds} rounds completed successfully")
-    print(f"📁 Checkpoints saved in: server/checkpoints/")
-    print("="*80 + "\n")
+    try:
+        fl.server.start_server(
+            server_address=args.addr,
+            config=fl.server.ServerConfig(num_rounds=args.rounds),
+            strategy=strategy,
+        )
+        
+        logger.info("="*80)
+        logger.info("FEDERATED TRAINING COMPLETE")
+        logger.info("="*80)
+        logger.info(f"Completed {args.rounds} round(s) successfully")
+        logger.info(f"Checkpoints saved in: server/checkpoints/")
+        logger.info("="*80)
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.exception(f"Server error: {e}")
+        raise
 
 
 if __name__ == "__main__":
