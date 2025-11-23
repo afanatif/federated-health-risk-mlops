@@ -1,0 +1,39 @@
+2025-11-23 23:58:04 | INFO     | [Node 1] Device: cuda
+2025-11-23 23:58:04 | INFO     | [Node 1] Loading pre-trained model: C:\Users\muham\OneDrive\Desktop\Uni\Projects\federated-health-risk-mlops\runs\train\node1_yolov8\weights\best.pt
+2025-11-23 23:58:04 | INFO     | [Node 1] Model initialized: trainable_params=0, total_params=3,012,213, param_arrays=355
+2025-11-23 23:58:04 | INFO     | [Node 1] ================================================================================
+2025-11-23 23:58:04 | INFO     | [Node 1] FLOWER CLIENT - Node 1
+2025-11-23 23:58:04 | INFO     | [Node 1] ================================================================================
+2025-11-23 23:58:04 | INFO     | [Node 1] Configuration:
+2025-11-23 23:58:04 | INFO     | [Node 1]   Model: YOLOv8n
+2025-11-23 23:58:04 | INFO     | [Node 1]   Classes: 7
+2025-11-23 23:58:04 | INFO     | [Node 1]   Parameter arrays: 355
+2025-11-23 23:58:04 | INFO     | [Node 1]   Device: cuda
+2025-11-23 23:58:04 | INFO     | [Node 1] ================================================================================
+2025-11-23 23:58:04 | INFO     | [Node 1] Connecting to server at 127.0.0.1:8080
+2025-11-23 23:58:04 | INFO     | [Node 1] ================================================================================
+2025-11-23 23:58:04 | INFO     | [Node 1] TRAINING ROUND - Node 1
+2025-11-23 23:58:04 | INFO     | [Node 1] ================================================================================
+2025-11-23 23:58:04 | INFO     | [Node 1] Receiving parameters from server: 355 arrays
+2025-11-23 23:58:04 | INFO     | [Node 1] Parameters loaded successfully
+2025-11-23 23:58:04 | INFO     | [Node 1] Loaded parameters from server
+2025-11-23 23:58:04 | INFO     | [Node 1] Step 1: Verifying data
+2025-11-23 23:58:04 | INFO     | [Node 1] Verifying data directory structure
+2025-11-23 23:58:04 | INFO     | [Node 1] Data verification complete: images=570, labels=285
+2025-11-23 23:58:04 | INFO     | [Node 1] Step 2: Validating labels
+2025-11-23 23:58:04 | INFO     | [Node 1] Validating label file format
+2025-11-23 23:58:04 | INFO     | [Node 1] Label validation complete: 285 files, 659 bounding boxes
+2025-11-23 23:58:04 | INFO     | [Node 1] Step 3: Creating dataset YAML
+2025-11-23 23:58:04 | INFO     | [Node 1] Creating dataset YAML configuration
+2025-11-23 23:58:04 | INFO     | [Node 1] Dataset YAML created: C:\Users\muham\OneDrive\Desktop\Uni\Projects\federated-health-risk-mlops\data\federated\splits\iid_5nodes\node_1\dataset.yaml, classes=7, names=['banner', 'erosion', 'hcrack', 'pothole', 'stone', 'trash', 'vcrack']
+2025-11-23 23:58:04 | INFO     | [Node 1] Step 4: Starting local training
+2025-11-23 23:58:04 | INFO     | [Node 1] Training configuration: epochs=10, batch=4, imgsz=640, device=cuda, samples=570, classes=7
+2025-11-23 23:58:04 | INFO     | [Node 1] Starting YOLO training ...
+2025-11-23 23:58:31 | INFO     | [Node 1] YOLO training completed
+2025-11-23 23:58:31 | INFO     | [Node 1] Extracting training metrics
+2025-11-23 23:58:31 | INFO     | [Node 1] Training metrics extracted from trainer.metrics
+2025-11-23 23:58:31 | INFO     | [Node 1] Metrics: {'box_loss': 1.0, 'cls_loss': 1.0, 'dfl_loss': 1.0}
+2025-11-23 23:58:31 | INFO     | [Node 1] Training round completed successfully
+2025-11-23 23:58:31 | INFO     | [Node 1] Extracting parameters: 355 arrays
+2025-11-23 23:58:31 | INFO     | [Node 1] Sending results to server: samples=570, params=355, metrics={'box_loss': 1.0, 'cls_loss': 1.0, 'dfl_loss': 1.0}
+2025-11-23 23:58:31 | INFO     | [Node 1] Client disconnected from server

@@ -15,6 +15,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.insert(0, project_root)
 
+# Import PyTorch 2.6 fix (must be before ultralytics import)
+import fix_pytorch26
+
 # Configure professional logging
 def setup_logging(log_level=logging.INFO, log_file=None):
     """Setup professional logging configuration"""
@@ -40,6 +43,28 @@ def setup_logging(log_level=logging.INFO, log_file=None):
 # Setup logging (will be reconfigured in main with file option)
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Fix for DFLoss compatibility: Add dummy DFLoss class if missing
+# This handles checkpoints saved with older ultralytics versions
+# Must be at module level (not inside functions) to be picklable
+try:
+    from ultralytics.utils.loss import DFLoss
+    DFLOSS_AVAILABLE = True
+except (ImportError, AttributeError):
+    DFLOSS_AVAILABLE = False
+    import ultralytics.utils.loss as loss_module
+    import torch.nn as nn
+    
+    class DFLoss(nn.Module):
+        """Dummy DFLoss class for loading old checkpoints"""
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+        def forward(self, *args, **kwargs):
+            return None
+    
+    # Add to the module so pickle can find it
+    loss_module.DFLoss = DFLoss
+    logger.debug("✅ Dummy DFLoss class added for checkpoint compatibility")
 
 import flwr as fl
 from flwr.common import Metrics, ndarrays_to_parameters, parameters_to_ndarrays
@@ -265,38 +290,66 @@ class DetailedFedAvg(fl.server.strategy.FedAvg):
             
             logger.info(f"Saving checkpoint for round {round_num}")
             
-            # CRITICAL FIX: Use SAME model config as clients!
-            logger.debug(f"Creating model: size={self.model_size}, classes={self.num_classes}")
-            model = get_model(model_size=self.model_size, num_classes=self.num_classes, pretrained=True)
+            # Load pre-trained model with correct structure (already has 7 classes)
+            logger.debug(f"Loading pre-trained model for checkpoint: size={self.model_size}, classes={self.num_classes}")
+            from ultralytics import YOLO
+            from clients.common.config import get_pretrained_model_path
+            import torch
             
-            # Count expected parameters from fresh model
-            expected_arrays = len(model_to_ndarrays(model))
-            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            # DFLoss compatibility fix is already applied at module level
             
-            logger.debug(
-                f"Model parameters: trainable={trainable_params:,}, "
-                f"expected_arrays={expected_arrays}, received_arrays={len(ndarrays)}"
-            )
-            
-            # Verify counts match
-            if len(ndarrays) != expected_arrays:
-                logger.error(
-                    f"Parameter count mismatch: expected={expected_arrays}, "
-                    f"got={len(ndarrays)}. Skipping checkpoint save."
+            try:
+                pretrained_model_path = get_pretrained_model_path(
+                    project_root=project_root
                 )
-                return
+                pretrained_model_path = str(pretrained_model_path)
+            except FileNotFoundError:
+                pretrained_model_path = None
             
-            # Load parameters
+            if pretrained_model_path and os.path.exists(pretrained_model_path):
+                try:
+                    model = YOLO(pretrained_model_path)
+                    logger.debug(f"✅ Loaded pre-trained model for checkpoint (already has {self.num_classes} classes)")
+                except (AttributeError, RuntimeError) as e:
+                    # Handle version mismatch: load checkpoint manually
+                    logger.warning(f"⚠️ Direct loading failed (version mismatch): {e}")
+                    logger.info("Loading checkpoint manually...")
+                    ckpt = torch.load(pretrained_model_path, map_location='cpu', weights_only=False)
+                    if isinstance(ckpt, dict) and 'model' in ckpt:
+                        model = YOLO(f'yolov8{self.model_size}.pt')
+                        saved_model = ckpt['model']
+                        if hasattr(saved_model, 'state_dict'):
+                            model.model.load_state_dict(saved_model.state_dict(), strict=False)
+                            logger.debug("✅ Loaded model weights from checkpoint manually")
+                        else:
+                            raise ValueError("Checkpoint format not recognized")
+                    else:
+                        raise ValueError("Invalid checkpoint format")
+            else:
+                # Fallback: create base model (shouldn't happen if pre-trained exists)
+                logger.warning(f"⚠️ Pre-trained model not found, using base YOLOv8")
+                model = YOLO(f'yolov8{self.model_size}.pt')
+            
+            # Load aggregated parameters into model
             ndarrays_to_model(model, ndarrays)
             
-            # Save round checkpoint
-            ckpt_path = os.path.join(self.checkpoint_dir, f"global_round_{round_num}.pt")
+            # Verify structure
+            final_detect = model.model.model[-1]
+            if hasattr(final_detect, 'nc'):
+                logger.debug(f"✅ Checkpoint model verified: {final_detect.nc} classes")
+            
+            # Ensure checkpoint directory exists
+            os.makedirs(self.checkpoint_dir, exist_ok=True)
+            
+            # Save round checkpoint (use absolute path to avoid path separator issues)
+            ckpt_filename = f"global_round_{round_num}.pt"
+            ckpt_path = os.path.abspath(os.path.join(self.checkpoint_dir, ckpt_filename))
             save_model(model, ckpt_path)
             logger.info(f"Checkpoint saved: {ckpt_path}")
             
             # Save final model
             if hasattr(self, 'total_rounds') and round_num == self.total_rounds:
-                final_path = os.path.join(project_root, "global_final_model.pt")
+                final_path = os.path.abspath(os.path.join(project_root, "global_final_model.pt"))
                 save_model(model, final_path)
                 logger.info(f"Final model saved: {final_path}")
                 
@@ -312,6 +365,7 @@ def main():
     parser.add_argument("--fraction-fit", type=float, default=1.0, help="Fraction of clients to fit")
     parser.add_argument("--model-size", type=str, default="n", help="Model size (n/s/m/l/x)")
     parser.add_argument("--num-classes", type=int, default=7, help="Number of classes")
+    parser.add_argument("--pretrained-model", type=str, default=None, help="Path to pretrained model (relative to project root or absolute)")
     parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Logging level")
     parser.add_argument("--log-file", type=str, default=None, help="Log file path (optional)")
     args = parser.parse_args()
@@ -332,38 +386,107 @@ def main():
     logger.info(f"  Model Size: YOLOv8{args.model_size}")
     logger.info(f"  Number of Classes: {args.num_classes}")
     logger.info(f"  Checkpoint Directory: server/checkpoints/")
+    if args.pretrained_model:
+        logger.info(f"  Pretrained Model: {args.pretrained_model}")
     if args.log_file:
         logger.info(f"  Log File: {log_file}")
     logger.info("="*80)
 
-    # Try to create initial parameters
-    initial_parameters = None
-    if MODEL_UTILS_AVAILABLE:
-        logger.info("Initializing YOLOv8 model")
+    # FEDERATED LEARNING: Load pre-trained model with 7 classes
+    # This ensures all clients start with the same model structure (no manual modification needed)
+    logger.info("Loading pre-trained model with 7 classes")
+    
+    from ultralytics import YOLO
+    import torch
+    from clients.common.config import get_pretrained_model_path
+    
+    # DFLoss compatibility fix is already applied at module level above
+    
+    # Load pre-trained model from notebook training (already has 7 classes)
+    try:
+        pretrained_model_path = get_pretrained_model_path(
+            model_path=args.pretrained_model,
+            project_root=project_root
+        )
+        pretrained_model_path = str(pretrained_model_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        logger.error("Please train the model first using train.ipynb or specify --pretrained-model")
+        raise
+    
+    if os.path.exists(pretrained_model_path):
+        logger.info(f"Loading pre-trained model: {pretrained_model_path}")
         try:
-            # CRITICAL FIX: Use command-line args for consistent configuration
-            model = get_model(model_size=args.model_size, num_classes=args.num_classes, pretrained=True)
-            ndarrays = model_to_ndarrays(model)
-            initial_parameters = ndarrays_to_parameters(ndarrays)
+            # Try direct YOLO loading first
+            server_model = YOLO(pretrained_model_path)
             
-            total_weights = sum(arr.size for arr in ndarrays)
-            logger.info(
-                f"Initial parameters created: model=YOLOv8{args.model_size}, "
-                f"classes={args.num_classes}, param_arrays={len(ndarrays)}, "
-                f"total_weights={total_weights:,}"
-            )
+            # Verify model has correct number of classes
+            detect = server_model.model.model[-1]
+            if hasattr(detect, 'nc'):
+                logger.info(f"✅ Pre-trained model loaded: {detect.nc} classes")
+                if detect.nc != args.num_classes:
+                    logger.warning(f"⚠️ Model has {detect.nc} classes, expected {args.num_classes}")
+            else:
+                logger.warning("⚠️ Could not verify model classes")
+        except (AttributeError, RuntimeError, Exception) as e:
+            # Handle version mismatch: load checkpoint manually using torch.load
+            logger.warning(f"⚠️ Direct loading failed (version mismatch): {e}")
+            logger.info("Attempting to load checkpoint manually...")
             
-            # Log first 5 parameter shapes for debugging
-            logger.debug("First 5 parameter array shapes:")
-            for i in range(min(5, len(ndarrays))):
-                logger.debug(f"  [{i}] {ndarrays[i].shape}")
-            
-        except Exception as e:
-            logger.warning(f"Could not create initial parameters: {e}")
-            logger.warning("Server will use client-initialized parameters")
-            logger.debug("", exc_info=True)
+            try:
+                # Use torch.load directly (fix_pytorch26.py patches weights_only=False)
+                # The DFLoss fix above should allow this to work now
+                ckpt = torch.load(
+                    pretrained_model_path, 
+                    map_location='cpu', 
+                    weights_only=False
+                )
+                
+                if isinstance(ckpt, dict) and 'model' in ckpt:
+                    # Create base model with correct structure
+                    server_model = YOLO(f'yolov8{args.model_size}.pt')
+                    
+                    # Extract state_dict from the saved model
+                    saved_model = ckpt['model']
+                    if hasattr(saved_model, 'state_dict'):
+                        # Load state dict (strict=False to handle architecture differences)
+                        server_model.model.load_state_dict(
+                            saved_model.state_dict(), 
+                            strict=False
+                        )
+                        logger.info("✅ Loaded model weights from checkpoint manually")
+                        
+                        # Verify model structure
+                        detect = server_model.model.model[-1]
+                        if hasattr(detect, 'nc'):
+                            logger.info(f"✅ Model verified: {detect.nc} classes")
+                            if detect.nc != args.num_classes:
+                                logger.warning(
+                                    f"⚠️ Model has {detect.nc} classes, "
+                                    f"expected {args.num_classes}"
+                                )
+                    else:
+                        raise ValueError("Checkpoint model has no state_dict method")
+                else:
+                    raise ValueError("Invalid checkpoint format: missing 'model' key")
+            except Exception as e2:
+                logger.error(f"❌ Failed to load checkpoint: {e2}")
+                logger.exception("Full error details:")
+                logger.info("Falling back to base YOLOv8 model (will start from scratch)")
+                server_model = YOLO(f'yolov8{args.model_size}.pt')
+                logger.warning("⚠️ Starting federated learning from base model (not pre-trained)")
     else:
-        logger.warning("Model utilities not available - server will use client weights")
+        # This should not happen due to FileNotFoundError check above
+        logger.error(f"❌ Pre-trained model not found")
+        logger.error("Please train the model first using train.ipynb or specify --pretrained-model")
+        raise FileNotFoundError("Pre-trained model not found")
+    
+    # Extract initial parameters
+    initial_params = model_to_ndarrays(server_model)
+    initial_parameters = ndarrays_to_parameters(initial_params)
+    
+    logger.info(f"✅ Server model initialized: {len(initial_params)} parameter arrays")
+    logger.info("✅ Initial parameters will be sent to all clients")
 
     # Create strategy
     logger.info("Configuring Federated Learning Strategy (FedAvg)")
@@ -372,9 +495,9 @@ def main():
         model_size=args.model_size,
         num_classes=args.num_classes,
         fraction_fit=args.fraction_fit,
-        fraction_evaluate=1.0,
+        fraction_evaluate=0.0,  # Disable evaluation - only training in federated learning
         min_fit_clients=args.min_clients,
-        min_evaluate_clients=args.min_clients,
+        min_evaluate_clients=0,  # No evaluation clients needed
         min_available_clients=args.min_clients,
         initial_parameters=initial_parameters,
         fit_metrics_aggregation_fn=weighted_average,
