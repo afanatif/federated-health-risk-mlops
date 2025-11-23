@@ -1,0 +1,6 @@
+names:
+- pothole
+nc: 1
+path: D:\Uni Stuff\mlop_proj\federated-health-risk-mlops\data\federated\splits\iid_5nodes\node_2
+train: images
+val: images
