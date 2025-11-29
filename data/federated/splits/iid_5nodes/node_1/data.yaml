@@ -1,0 +1,12 @@
+names:
+- banner
+- erosion
+- hcrack
+- pothole
+- stone
+- trash
+- vcrack
+nc: 7
+path: /home/dell/Assign/MLOPs/Merge/federated-health-risk-mlops-omer/data/federated/splits/iid_5nodes/node_1
+train: images
+val: /home/dell/Assign/MLOPs/Merge/federated-health-risk-mlops-omer/data/Pothole.v1i.yolov8/valid/images

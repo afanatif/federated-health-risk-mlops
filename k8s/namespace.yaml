@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: federated-learning
+  labels:
+    app: fl-system
+    environment: production

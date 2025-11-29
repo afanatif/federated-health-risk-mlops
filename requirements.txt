@@ -6,7 +6,7 @@
 # Install with: pip install -r requirements.txt
 
 # NumPy (1.x ONLY - 2.x breaks Flower)
-numpy==1.24.3
+numpy>=1.26.0
 
 # Core Deep Learning
 # Note: CPU versions installed via workflow with specific index URL
@@ -15,20 +15,20 @@ torch>=2.0.0
 torchvision>=0.15.0
 
 # YOLOv8 Object Detection
-ultralytics==8.0.196
+ultralytics>=8.0.196
 
 # Image & Data Processing
-pillow==10.0.0
-pyyaml==6.0
-opencv-python-headless==4.8.0.76
-tqdm==4.66.1
+pillow>=10.0.0
+pyyaml>=6.0
+opencv-python-headless>=4.8.0.76
+tqdm>=4.66.1
 
 # CRITICAL: Crypto for Flower secure aggregation
 # This was the missing dependency causing: ModuleNotFoundError: No module named 'Crypto'
-pycryptodome==3.18.0
+pycryptodome>=3.18.0
 
 # Federated Learning
-flwr==1.5.0
+flwr>=1.5.0
 
 # Additional Flower dependencies
 grpcio>=1.48.0

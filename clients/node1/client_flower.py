@@ -121,9 +121,11 @@ if __name__ == "__main__":
     )
     
     try:
-        logger.info("Connecting to server at 127.0.0.1:8080")
+        # Get server address from environment or use default
+        server_address = os.environ.get('SERVER_ADDRESS', '127.0.0.1:8080')
+        logger.info(f"Connecting to server at {server_address}")
         fl.client.start_numpy_client(
-            server_address="127.0.0.1:8080",
+            server_address=server_address,
             client=client
         )
         logger.info("Client disconnected from server")

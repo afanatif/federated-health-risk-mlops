@@ -1,0 +1,55 @@
+# Federated Learning Server Dockerfile
+# Multi-stage build for optimized image size
+
+FROM python:3.10-slim as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first (for better caching)
+COPY requirements.txt .
+
+# Install PyTorch CPU version and other dependencies
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir mlflow prometheus-client
+
+# Copy application code
+COPY __init__.py .
+COPY fix_pytorch26.py .
+COPY models/ ./models/
+COPY server/ ./server/
+COPY scripts/ ./scripts/
+COPY clients/common/ ./clients/common/
+
+# Create directories for outputs
+RUN mkdir -p /app/server/checkpoints /app/server/logs /app/mlruns
+
+# Expose ports
+# 8080: Flower gRPC server
+# 8081: Prometheus metrics
+EXPOSE 8080 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import socket; sock = socket.socket(); sock.settimeout(5); sock.connect(('localhost', 8080)); sock.close()" || exit 1
+
+# Default command
+CMD ["python", "server/server_flower.py", \
+    "--rounds", "10", \
+    "--min-clients", "3", \
+    "--model-size", "n", \
+    "--num-classes", "7"]

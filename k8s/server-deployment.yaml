@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-server
+  namespace: federated-learning
+  labels:
+    app: fl-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-server
+  template:
+    metadata:
+      labels:
+        app: fl-server
+    spec:
+      containers:
+      - name: server
+        image: federated-learning/server:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: grpc
+          protocol: TCP
+        - containerPort: 8081
+          name: metrics
+          protocol: TCP
+        env:
+        - name: MLFLOW_TRACKING_URI
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: MLFLOW_TRACKING_URI
+        - name: FL_ROUNDS
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: FL_ROUNDS
+        - name: FL_MIN_CLIENTS
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: FL_MIN_CLIENTS
+        - name: MODEL_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: MODEL_SIZE
+        - name: NUM_CLASSES
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: NUM_CLASSES
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: LOG_LEVEL
+        volumeMounts:
+        - name: checkpoints
+          mountPath: /app/server/checkpoints
+        - name: logs
+          mountPath: /app/server/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: checkpoints
+        persistentVolumeClaim:
+          claimName: model-checkpoints-pvc
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fl-server
+  namespace: federated-learning
+  labels:
+    app: fl-server
+spec:
+  type: NodePort
+  selector:
+    app: fl-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30080
+    name: grpc
+    protocol: TCP
+  - port: 8081
+    targetPort: 8081
+    nodePort: 30081
+    name: metrics
+    protocol: TCP

@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # MLflow Tracking Server
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlflow
+    container_name: fl-mlflow
+    ports:
+      - "5000:5000"
+      - "8081:8081"
+    environment:
+      - MLFLOW_HOST=0.0.0.0
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+    container_name: fl-server
+    ports:
+      - "8080:8080" # Flower gRPC
+      - "8081:8081" # Prometheus metrics
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - FL_ROUNDS=10
+      - FL_MIN_CLIENTS=3
+      - MODEL_SIZE=n
+      - NUM_CLASSES=7
+    volumes:
+      - server-checkpoints:/app/server/checkpoints
+      - server-logs:/app/server/logs
+      - ./global_final_model.pt:/app/global_final_model.pt:ro
+    networks:
+      - fl-network
+    restart: unless-stopped
+    depends_on:
+      mlflow:
+        condition: service_started
+    command: >
+      python server/server_flower.py --rounds 10 --min-clients 3 --model-size n --num-classes 7 --pretrained-model /app/global_final_model.pt
+
+  # Client Node 1
+  client1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    container_name: fl-client-node1
+    environment:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    container_name: fl-client-node2
+    environment:
+      - NODE_ID=2
+      - SERVER_ADDRESS=server:8080
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./clients/node2:/app/clients/node2
+      - ./dataset_node2.yaml:/app/dataset.yaml:ro
+      - client2-data:/app/data
+    networks:
+      - fl-network
+    depends_on:
+      - server
+    command: python clients/node2/client_flower.py
+
+  # Client Node 3
+  client3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    container_name: fl-client-node3
+    environment:
+      - NODE_ID=3
+      - SERVER_ADDRESS=server:8080
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./clients/node3:/app/clients/node3
+      - ./dataset_node3.yaml:/app/dataset.yaml:ro
+      - client3-data:/app/data
+    networks:
+      - fl-network
+    depends_on:
+      - server
+    command: python clients/node3/client_flower.py
+
+  # Prometheus for metrics monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fl-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - fl-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+networks:
+  fl-network:
+    driver: bridge
+
+volumes:
+  mlflow-artifacts:
+  mlflow-backend:
+  server-checkpoints:
+  server-logs:
+  client1-data:
+  client2-data:
+  client3-data:
+  prometheus-data:

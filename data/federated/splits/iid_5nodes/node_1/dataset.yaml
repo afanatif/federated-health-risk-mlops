@@ -1,0 +1,12 @@
+names:
+- banner
+- erosion
+- hcrack
+- pothole
+- stone
+- trash
+- vcrack
+nc: 7
+path: D:\fed\federated-health-risk-mlops\data\federated\splits\iid_5nodes\node_1
+train: images
+val: images

@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: federated-learning
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    scrape_configs:
+      # Federated Learning Server metrics
+      - job_name: 'fl-server'
+        static_configs:
+          - targets: ['fl-server:8081']
+            labels:
+              service: 'federated-learning-server'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: federated-learning
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+          - '--web.console.templates=/usr/share/prometheus/consoles'
+        ports:
+        - containerPort: 9090
+          name: web
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: data
+          mountPath: /prometheus
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: prometheus-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: federated-learning
+  labels:
+    app: prometheus
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30090
+    name: web

@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fl-client
+  namespace: federated-learning
+  labels:
+    app: fl-client
+spec:
+  serviceName: fl-client
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fl-client
+  template:
+    metadata:
+      labels:
+        app: fl-client
+    spec:
+      containers:
+      - name: client
+        image: federated-learning/client:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SERVER_ADDRESS
+          value: "fl-server:8080"
+        - name: MLFLOW_TRACKING_URI
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: MLFLOW_TRACKING_URI
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: fl-config
+              key: LOG_LEVEL
+        volumeMounts:
+        - name: dataset
+          mountPath: /app/data
+        - name: logs
+          mountPath: /app/clients/logs
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"
+      volumes:
+      - name: dataset
+        persistentVolumeClaim:
+          claimName: dataset-pvc
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fl-client
+  namespace: federated-learning
+  labels:
+    app: fl-client
+spec:
+  clusterIP: None  # Headless service for StatefulSet
+  selector:
+    app: fl-client
+  ports:
+  - port: 8080
+    name: client

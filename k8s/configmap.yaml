@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fl-config
+  namespace: federated-learning
+data:
+  # Training configuration
+  FL_ROUNDS: "10"
+  FL_MIN_CLIENTS: "3"
+  MODEL_SIZE: "n"
+  NUM_CLASSES: "7"
+  FL_FRACTION_FIT: "1.0"
+  
+  # MLflow configuration
+  MLFLOW_TRACKING_URI: "http://mlflow-service:5000"
+  MLFLOW_EXPERIMENT_NAME: "federated-health-risk-mlops"
+  
+  # Prometheus configuration
+  PROMETHEUS_PORT: "8081"
+  
+  # Logging
+  LOG_LEVEL: "INFO"

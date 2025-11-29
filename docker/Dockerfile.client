@@ -1,0 +1,39 @@
+# Federated Learning Client Dockerfile
+
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    NODE_ID=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install PyTorch CPU version and other dependencies
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY __init__.py .
+COPY fix_pytorch26.py .
+COPY models/ ./models/
+COPY clients/ ./clients/
+COPY dataset_node*.yaml ./
+
+# Create directories
+RUN mkdir -p /app/clients/logs /app/data
+
+# Default command (will be overridden in docker-compose)
+CMD ["python", "-m", "flwr.client"]

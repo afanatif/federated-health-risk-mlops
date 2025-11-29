@@ -1,5 +1,5 @@
 """
-Federated Learning Client for YOLOv8 - Node 2
+Federated Learning Client for YOLOv8 - Node 1
 Uses common client implementation
 """
 
@@ -42,7 +42,7 @@ except (ImportError, AttributeError):
 # ============================================
 # NODE CONFIGURATION
 # ============================================
-NODE_ID = 2
+NODE_ID = 1
 
 # ============================================
 # MODEL CONFIGURATION - MUST MATCH SERVER!
@@ -58,6 +58,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Device: {device}")
 
 # Load pre-trained model with 7 classes (same as server)
+# This ensures structure matches from the start
 try:
     pretrained_model_path = get_pretrained_model_path(project_root=project_root)
     pretrained_model_path = str(pretrained_model_path)
@@ -67,6 +68,7 @@ try:
         model = YOLO(pretrained_model_path)
         logger.info(f"✅ Pre-trained model loaded (already has {NUM_CLASSES} classes)")
     except (AttributeError, RuntimeError) as e:
+        # Handle version mismatch: load checkpoint manually
         logger.warning(f"⚠️ Direct loading failed (version mismatch): {e}")
         logger.info("Attempting to load checkpoint manually...")
         import torch
@@ -119,9 +121,11 @@ if __name__ == "__main__":
     )
     
     try:
-        logger.info("Connecting to server at 127.0.0.1:8080")
+        # Get server address from environment or use default
+        server_address = os.environ.get('SERVER_ADDRESS', '127.0.0.1:8080')
+        logger.info(f"Connecting to server at {server_address}")
         fl.client.start_numpy_client(
-            server_address="127.0.0.1:8080",
+            server_address=server_address,
             client=client
         )
         logger.info("Client disconnected from server")
@@ -129,3 +133,4 @@ if __name__ == "__main__":
         logger.info("Client stopped by user")
     except Exception as e:
         logger.exception(f"Connection error: {e}")
+

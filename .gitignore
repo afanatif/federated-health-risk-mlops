@@ -1,6 +1,49 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# MLflow
+mlruns/
+mlflow-artifacts/
+mlflow-backend/
+
+# Docker
+*.log
+
+# Model files (large)
 *.pt
-*.h5
-/data/*
-!.gitkeep
+!global_final_model.pt
+runs/
+
+# Temporary files
+temp/
+*.tmp
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data (large datasets)
+data/raw/
+data/processed/
+
+# Kubernetes
+*.exe
+minikube-installer.exe

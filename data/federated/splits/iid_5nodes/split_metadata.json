@@ -1,0 +1,87 @@
+{
+  "strategy": "iid",
+  "num_nodes": 5,
+  "seed": 42,
+  "total_images": 1429,
+  "total_annotations": 3162,
+  "nodes": {
+    "1": {
+      "num_images": 285,
+      "num_annotations": 622,
+      "class_distribution": {
+        "banner": 29,
+        "erosion": 54,
+        "hcrack": 71,
+        "pothole": 5,
+        "trash": 6,
+        "vcrack": 457
+      },
+      "unique_classes": 6
+    },
+    "2": {
+      "num_images": 285,
+      "num_annotations": 595,
+      "class_distribution": {
+        "banner": 37,
+        "erosion": 54,
+        "hcrack": 64,
+        "pothole": 13,
+        "stone": 7,
+        "trash": 5,
+        "vcrack": 415
+      },
+      "unique_classes": 7
+    },
+    "3": {
+      "num_images": 285,
+      "num_annotations": 647,
+      "class_distribution": {
+        "banner": 34,
+        "erosion": 89,
+        "hcrack": 64,
+        "pothole": 10,
+        "stone": 16,
+        "trash": 3,
+        "vcrack": 431
+      },
+      "unique_classes": 7
+    },
+    "4": {
+      "num_images": 285,
+      "num_annotations": 727,
+      "class_distribution": {
+        "banner": 88,
+        "erosion": 84,
+        "hcrack": 52,
+        "pothole": 12,
+        "stone": 5,
+        "trash": 2,
+        "vcrack": 484
+      },
+      "unique_classes": 7
+    },
+    "5": {
+      "num_images": 289,
+      "num_annotations": 571,
+      "class_distribution": {
+        "banner": 41,
+        "erosion": 67,
+        "hcrack": 63,
+        "pothole": 8,
+        "stone": 9,
+        "trash": 3,
+        "vcrack": 380
+      },
+      "unique_classes": 7
+    }
+  },
+  "class_names": [
+    "banner",
+    "erosion",
+    "hcrack",
+    "pothole",
+    "stone",
+    "trash",
+    "vcrack"
+  ]
+}

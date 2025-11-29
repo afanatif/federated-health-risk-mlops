@@ -1,0 +1,215 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: federated-learning
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-service:9090
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-config
+  namespace: federated-learning
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'Federated Learning'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: federated-learning
+data:
+  federated-learning.json: |
+    {
+      "dashboard": {
+        "title": "Federated Learning Dashboard",
+        "tags": ["federated-learning", "mlops"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "5s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Training Loss",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "fl_train_loss",
+                "legendFormat": "Train Loss",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"label": "Loss", "show": true},
+              {"show": true}
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Evaluation Loss",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+            "targets": [
+              {
+                "expr": "fl_eval_loss",
+                "legendFormat": "Eval Loss",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Model Accuracy",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "targets": [
+              {
+                "expr": "fl_accuracy",
+                "legendFormat": "Accuracy",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"label": "Accuracy", "show": true, "min": 0, "max": 1},
+              {"show": true}
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Active Clients",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 6, "x": 12, "y": 8},
+            "targets": [
+              {
+                "expr": "fl_active_clients",
+                "legendFormat": "Clients",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Rounds Completed",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 6, "x": 18, "y": 8},
+            "targets": [
+              {
+                "expr": "fl_rounds_completed_total",
+                "legendFormat": "Rounds",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "title": "Round Duration",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+            "targets": [
+              {
+                "expr": "rate(fl_round_duration_seconds_sum[5m]) / rate(fl_round_duration_seconds_count[5m])",
+                "legendFormat": "Avg Duration (s)",
+                "refId": "A"
+              }
+            ]
+          }
+        ]
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: federated-learning
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+          name: web
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        - name: GF_PATHS_PROVISIONING
+          value: "/etc/grafana/provisioning"
+        volumeMounts:
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+        - name: datasource-config
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboard-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboard
+          mountPath: /var/lib/grafana/dashboards
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: grafana-data
+        persistentVolumeClaim:
+          claimName: grafana-data-pvc
+      - name: datasource-config
+        configMap:
+          name: grafana-datasource
+      - name: dashboard-config
+        configMap:
+          name: grafana-dashboard-config
+      - name: dashboard
+        configMap:
+          name: grafana-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: federated-learning
+  labels:
+    app: grafana
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30300
+    name: web
